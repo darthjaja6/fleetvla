@@ -16,7 +16,9 @@ request should keep the scheduler independent of runtime and environment
 internals, pass `fleetvla test-scheduler`, and attach or describe a reproducible
 benchmark artifact. Cite the originating paper or implementation and preserve
 its license and attribution. Results should report the full workload rather
-than a context-free scalar score.
+than a context-free scalar score. Scheduler decisions run synchronously in the
+current wall-clock engine: keep them bounded, never sleep inside `schedule()`,
+and disclose measured decision cost for nontrivial search algorithms.
 
 For runtime or adapter changes, include tests for ordering, time units, stale
 generations, resets, disconnects, buffer bounds, and deterministic virtual-time

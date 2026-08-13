@@ -48,6 +48,12 @@ It also reevaluates earlier if the ready set changes. Robot control ticks and
 local fallbacks continue during the wait. A deferral must be finite and later
 than `fleet.now_s`; `fleetvla test-scheduler` checks that contract.
 
+`schedule()` itself is synchronous in the current wall-clock engine. Keep its
+computation bounded and return promptly: use `defer_until_s` to express waiting,
+never `sleep()` inside a scheduler. A slow decision delays process-local control
+ticks and fallbacks; robot-side watchdogs remain the independent safety boundary.
+Decision isolation and enforceable scheduler time budgets are not implemented.
+
 Then run it on the versioned heterogeneous workload:
 
 ```bash
@@ -112,4 +118,5 @@ fleetvla benchmark --scheduler adaptive-slack \
 When contributing a built-in algorithm, include its source paper or rationale,
 typed configuration, conformance test, a deterministic benchmark, and an
 explanation of the trade-off visible in the artifact. Do not import simulator,
-robot, reward, or policy framework types into scheduler code.
+robot, reward, or policy framework types into scheduler code. Report scheduler
+decision cost for algorithms whose search is not trivially bounded.

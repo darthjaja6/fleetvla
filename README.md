@@ -44,6 +44,10 @@ distribution's venv package first (for example `python3-venv` on Debian or
 Ubuntu), then recreate `.venv`. After activation, check `python --version`;
 FleetVLA requires Python 3.10 or newer.
 
+Without administrator access, an environment manager that bundles its own pip
+seeder is also sufficient. For example, if `uv` is available, replace the first
+command with `uv venv .venv`, then activate and continue with the same install.
+
 ## Lifecycle in concrete terms
 
 Suppose two robots publish observations while one GPU is idle. The runtime

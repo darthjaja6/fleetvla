@@ -43,6 +43,11 @@ batches. Raw events in the checksummed JSON artifact are the evidence for those
 trade-offs. The artifact also records FleetVLA, Python, platform, and local
 scheduler source versions needed to interpret reproduction failures.
 
+The artifact's `sha256` is computed over its canonical JSON body before the
+`sha256` field is added. It protects semantic content independently of
+whitespace and key formatting, so it is intentionally different from running
+`sha256sum` on the formatted JSON file.
+
 Use `benchmarks/contention.json` to emphasize deadline/fairness choices under a
 single-slot backend. Use `benchmarks/batching.json` to expose the latency versus
 batch-size decision with two batch slots. Neither is a universal score.
