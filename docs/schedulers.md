@@ -88,6 +88,13 @@ reruns the original environment and requires every event and metric to match.
 The derived artifact embeds the normalized arrival schedule, so it remains
 replayable if it is moved or the source artifact is removed.
 
+The heterogeneous workload is a quick integration check and may not separate
+similar policies. Before proposing a scheduler, also run
+`benchmarks/batching.json` to exercise coalescing with two batch slots and
+`benchmarks/contention.json` to exercise ordering and fairness under a
+single-slot backend. Report all resulting trade-offs, including a tie or
+regression.
+
 A local-scheduler artifact also embeds the exact single-file source and its
 hash. Without the opt-in flag, FleetVLA refuses to execute code embedded in
 JSON. Built-in scheduler artifacts never require the flag.

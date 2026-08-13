@@ -46,7 +46,8 @@ FleetVLA requires Python 3.10 or newer.
 
 Without administrator access, an environment manager that bundles its own pip
 seeder is also sufficient. For example, if `uv` is available, replace the first
-command with `uv venv .venv`, then activate and continue with the same install.
+command with `uv venv --seed .venv`, then activate and continue with the same
+install. The `--seed` flag installs pip into the environment.
 
 ## Lifecycle in concrete terms
 
