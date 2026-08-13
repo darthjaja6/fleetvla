@@ -19,7 +19,7 @@ platform-specific.
 FleetVLA has no runtime dependencies. With Python 3.10 or newer:
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e .
 fleetvla demo
@@ -39,16 +39,19 @@ slow-arm: 20 actions, 0 starved ticks
 dispatch batch sizes: [2, 1, 2, 1, ...]
 ```
 
-If installation rejects the interpreter, check `python --version`; FleetVLA
-requires Python 3.10 or newer.
+If `python3 -m venv` reports that `ensurepip` is unavailable, install your
+distribution's venv package first (for example `python3-venv` on Debian or
+Ubuntu), then recreate `.venv`. After activation, check `python --version`;
+FleetVLA requires Python 3.10 or newer.
 
 ## Lifecycle in concrete terms
 
 Suppose two robots publish observations while one GPU is idle. The runtime
 records each observation and exposes immutable session snapshots to a
-scheduler. The scheduler returns session IDs to batch; it cannot mutate robot
-state. The backend produces versioned action chunks while robot control ticks
-continue independently. On delivery, the runtime accepts only the chunk that
+scheduler. The scheduler returns session IDs to batch, or a future dispatch
+time when it wants to wait briefly for more work; it cannot mutate robot state.
+The backend produces versioned action chunks while robot control ticks continue
+independently. On delivery, the runtime accepts only the chunk that
 matches the session's current generation and request. Each robot consumes its
 own action buffer at its configured control rate. A reset or disconnect bumps
 the generation, so an old GPU result cannot reach the robot.

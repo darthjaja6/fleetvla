@@ -19,6 +19,7 @@ from fleetvla.benchmark import (
     verify_artifact,
     write_artifact,
 )
+from fleetvla.cli import main
 
 
 def _seal_artifact(body):
@@ -1027,6 +1028,13 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
         "class Custom:\n"
         "    def schedule(self, fleet, costs):\n"
         "        del costs\n"
+        "        if not fleet.ready_sessions:\n"
+        "            return ScheduleDecision((), 'no work')\n"
+        "        oldest = min(s.request_time_s for s in "
+        "fleet.ready_sessions)\n"
+        "        if fleet.now_s < oldest + 0.001:\n"
+        "            return ScheduleDecision((), 'wait', "
+        "defer_until_s=oldest + 0.001)\n"
         "        return ScheduleDecision(tuple(s.session_id for s in "
         "fleet.ready_sessions[:fleet.max_batch_size]), 'embedded')\n"
     )
@@ -1034,6 +1042,10 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
         default_config(), scheduler=f"{scheduler_path}:Custom"
     )
     artifact = write_artifact(run_benchmark(config), tmp_path / "run.json")
+    assert any(
+        event["kind"] == "dispatch_deferred"
+        for event in load_artifact(artifact)["events"]
+    )
     moved = tmp_path / "shared" / "run.json"
     moved.parent.mkdir()
     shutil.move(artifact, moved)
@@ -1048,6 +1060,40 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
 
     _, matches = replay_artifact(moved, allow_embedded_scheduler=True)
     assert matches
+
+
+def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path) -> None:
+    scheduler_path = tmp_path / "custom scheduler.py"
+    scheduler_path.write_text(
+        "from fleetvla import ScheduleDecision\n"
+        "class Custom:\n"
+        "    def schedule(self, fleet, costs):\n"
+        "        return ScheduleDecision(tuple(s.session_id for s in "
+        "fleet.ready_sessions[:fleet.max_batch_size]))\n"
+    )
+    output = tmp_path / "results"
+
+    assert main(
+        [
+            "benchmark",
+            "--duration",
+            "0.1",
+            "--scheduler",
+            "fifo",
+            "--scheduler",
+            f"{scheduler_path}:Custom",
+            "--output",
+            str(output),
+        ]
+    ) == 0
+
+    names = {path.name for path in output.iterdir()}
+    assert "heterogeneous-two-arm-fifo-s0.json" in names
+    local_names = names - {"heterogeneous-two-arm-fifo-s0.json"}
+    assert len(local_names) == 1
+    assert next(iter(local_names)).startswith(
+        "heterogeneous-two-arm-custom-scheduler-Custom-"
+    )
 
 
 def test_benchmark_and_trace_times_must_be_finite() -> None:

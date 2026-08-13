@@ -3,7 +3,9 @@
 A FleetVLA scheduler answers one narrow question: which ready sessions should
 share the next inference call? The runtime owns mutable robot state. Your
 scheduler receives a frozen `FleetSnapshot` plus an `InferenceCostModel`, and
-returns a `ScheduleDecision` containing session IDs.
+returns a `ScheduleDecision` containing session IDs. A scheduler may instead
+return an empty selection with an absolute `defer_until_s` when waiting briefly
+could form a better batch.
 
 Start with the complete example in `examples/my_scheduler.py`. It sorts ready
 robots by remaining executable action time:
@@ -28,6 +30,23 @@ No installation hook or runtime edit is required. Check the contract directly:
 ```bash
 fleetvla test-scheduler ./examples/my_scheduler.py:SmallestBufferFirst
 ```
+
+To coalesce near-simultaneous arrivals, defer from the oldest request rather
+than repeatedly adding a delay to `fleet.now_s`:
+
+```python
+oldest_request_s = min(s.request_time_s for s in fleet.ready_sessions)
+dispatch_at_s = oldest_request_s + 0.010
+if fleet.now_s < dispatch_at_s:
+    return ScheduleDecision(
+        (), "wait up to 10 ms for peers", defer_until_s=dispatch_at_s
+    )
+```
+
+At the deadline the runtime calls the scheduler again with a fresh snapshot.
+It also reevaluates earlier if the ready set changes. Robot control ticks and
+local fallbacks continue during the wait. A deferral must be finite and later
+than `fleet.now_s`; `fleetvla test-scheduler` checks that contract.
 
 Then run it on the versioned heterogeneous workload:
 
@@ -75,6 +94,11 @@ it with predicted inference and transport time, not with action count.
 `connected` distinguish backpressure and endpoint state, although only ready
 sessions can be selected. Generations and sequence numbers remain runtime
 responsibilities: a scheduler never constructs or accepts chunks.
+
+The built-in cost model is deliberately a linear batch-latency estimate
+(`base_latency_s + per_item_latency_s * batch_size`). Backends may update its
+measured coefficients, but the current public scheduler snapshot does not yet
+model shape-, cache-, or device-specific costs.
 
 Built-ins live in `fleetvla/schedulers/` and are registered explicitly in that
 package's `__init__.py`: FIFO, round robin, earliest deadline first, and adaptive

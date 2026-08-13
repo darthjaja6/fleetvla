@@ -59,9 +59,16 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
             raise SchedulerConformanceError(
                 "scheduler decision contains duplicate sessions"
             )
-        if not decision.session_ids:
+        if not decision.session_ids and decision.defer_until_s is None:
             raise SchedulerConformanceError(
-                "scheduler returned an empty decision for ready work"
+                "scheduler must select work or defer to a future time"
+            )
+        if (
+            decision.defer_until_s is not None
+            and decision.defer_until_s <= fleet.now_s
+        ):
+            raise SchedulerConformanceError(
+                "scheduler deferral must be later than fleet.now_s"
             )
         if len(decision.session_ids) > fleet.max_batch_size:
             raise SchedulerConformanceError("scheduler exceeded max_batch_size")
@@ -76,12 +83,13 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
                 "fresh scheduler instances are not deterministic"
             )
     empty = FleetSnapshot(fleets[0].now_s, (), fleets[0].max_batch_size)
-    if factory().schedule(empty, costs).session_ids:
+    empty_decision = factory().schedule(empty, costs)
+    if empty_decision.session_ids or empty_decision.defer_until_s is not None:
         raise SchedulerConformanceError(
-            "scheduler selected work from an empty fleet"
+            "scheduler selected or deferred work from an empty fleet"
         )
     return (
-        "non-empty decision for ready work",
+        "selection or future deferral for ready work",
         "ScheduleDecision return type",
         "unique sessions",
         "ready-session subset",

@@ -27,8 +27,10 @@ single-slot scenario cannot demonstrate batching gains.
 
 Armory's Lookahead algorithm from [Action Chunk Scheduling for Batched Robot
 Policy Serving](https://arxiv.org/abs/2608.00337) is an intended compatibility
-target, not currently implemented. It should only be added after its algorithm
-and assumptions can be faithfully adapted and reproduced.
+target, not currently implemented. FleetVLA's scheduler contract can now defer
+dispatch to coalesce near-future arrivals, which is one required building
+block; Lookahead should only be added after its complete algorithm and
+assumptions can be faithfully adapted and reproduced.
 
 ## System-track evidence
 
@@ -46,3 +48,9 @@ episode boundary; the run recorded 9 successes over 17 completed episodes.
 This single-seed systems run is evidence for dynamic
 batching, post-reset scheduling, full-suite protocol coverage, and end-to-end
 behavior, not a standardized policy-quality or scheduler claim.
+
+The system run predates the dispatch-deferral API and identifies source commit
+`f8232ab` by its recorded source SHA-256. On newer source, inspect it with
+`fleetvla verify-artifact --allow-source-mismatch` or check out that commit for
+an exact source match. The flag verifies its checksum and internal consistency;
+it does not claim that the historical GPU run exercised newer code.

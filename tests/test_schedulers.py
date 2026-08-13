@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from fleetvla import FleetSnapshot, InferenceCostModel, SessionSnapshot
+from fleetvla import (
+    FleetSnapshot,
+    InferenceCostModel,
+    ScheduleDecision,
+    SessionSnapshot,
+)
 from fleetvla.cli import main
 from fleetvla.schedulers import check_scheduler, create_scheduler, registry
 
@@ -33,6 +38,27 @@ def test_all_registered_schedulers_pass_public_conformance() -> None:
     assert registry.names() == ("adaptive-slack", "edf", "fifo", "round-robin")
     for name in registry.names():
         assert len(check_scheduler(lambda name=name: create_scheduler(name))) == 7
+
+
+def test_conformance_accepts_future_dispatch_deferral() -> None:
+    class Deferred:
+        def schedule(self, fleet, costs):
+            del costs
+            if not fleet.ready_sessions:
+                return ScheduleDecision((), "no work")
+            return ScheduleDecision((), "wait for peers", fleet.now_s + 0.01)
+
+    assert len(check_scheduler(Deferred)) == 7
+
+
+def test_conformance_rejects_non_future_dispatch_deferral() -> None:
+    class InvalidDeferred:
+        def schedule(self, fleet, costs):
+            del costs
+            return ScheduleDecision((), "not future", fleet.now_s)
+
+    with pytest.raises(ValueError, match="later than"):
+        check_scheduler(InvalidDeferred)
 
 
 def test_builtin_algorithms_make_distinct_documented_choices() -> None:

@@ -97,10 +97,16 @@ class InferenceCostModel:
 class ScheduleDecision:
     session_ids: tuple[str, ...]
     reason: str = ""
+    defer_until_s: float | None = None
 
     def __post_init__(self) -> None:
         if len(set(self.session_ids)) != len(self.session_ids):
             raise ValueError("a schedule decision cannot contain duplicates")
+        if self.defer_until_s is not None:
+            if not _is_finite_number(self.defer_until_s):
+                raise ValueError("defer_until_s must be finite")
+            if self.session_ids:
+                raise ValueError("a deferred decision cannot select sessions")
 
 
 @dataclass(frozen=True, slots=True)

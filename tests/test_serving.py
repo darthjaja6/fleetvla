@@ -8,6 +8,7 @@ from fleetvla import (
     ActionChunk,
     FIFOScheduler,
     FieldSpec,
+    ScheduleDecision,
     SessionConfig,
     SyntheticBackend,
 )
@@ -72,6 +73,24 @@ class SlowEndpoint(FakeEndpoint):
 class BlockingScheduler(FIFOScheduler):
     def schedule(self, fleet, costs):
         time.sleep(0.2)
+        return super().schedule(fleet, costs)
+
+
+class BrieflyDeferredScheduler(FIFOScheduler):
+    def __init__(self):
+        super().__init__()
+        self.calls = 0
+
+    def schedule(self, fleet, costs):
+        self.calls += 1
+        oldest_request_s = min(
+            session.request_time_s for session in fleet.ready_sessions
+        )
+        dispatch_at_s = oldest_request_s + 0.02
+        if fleet.now_s < dispatch_at_s:
+            return ScheduleDecision(
+                (), "wait briefly", defer_until_s=dispatch_at_s
+            )
         return super().schedule(fleet, costs)
 
 
@@ -152,6 +171,24 @@ def test_wall_clock_control_ticks_continue_during_batched_inference() -> None:
     assert cost_event.details["estimated_latency_s"] == 0
     completed = next(event for event in events if event.kind == "inference_completed")
     assert "backend_reported_latency_s" in completed.details
+
+
+def test_wall_clock_scheduler_can_defer_without_busy_looping() -> None:
+    scheduler = BrieflyDeferredScheduler()
+    engine = AsyncServingEngine(
+        [FakeEndpoint("a"), FakeEndpoint("b")],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        scheduler,
+        max_batch_size=2,
+    )
+
+    events = asyncio.run(engine.run(0.06))
+
+    deferred = next(event for event in events if event.kind == "dispatch_deferred")
+    dispatched = next(event for event in events if event.kind == "batch_dispatched")
+    assert dispatched.time_s >= deferred.details["defer_until_s"]
+    assert dispatched.details["batch_size"] == 2
+    assert scheduler.calls < 10
 
 
 def test_wall_clock_metrics_count_control_ticks_missed_by_slow_endpoint() -> None:

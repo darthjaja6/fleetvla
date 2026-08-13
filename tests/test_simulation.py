@@ -1,6 +1,52 @@
-from fleetvla import FleetSimulator, RobotSpec, SyntheticBackend
 import math
+
 import pytest
+
+from fleetvla import (
+    FleetSimulator,
+    RobotSpec,
+    ScheduleDecision,
+    SyntheticBackend,
+)
+
+
+class CoalescingScheduler:
+    def schedule(self, fleet, costs):
+        del costs
+        ready = fleet.ready_sessions
+        if not ready:
+            return ScheduleDecision((), "no work")
+        oldest_request_s = min(session.request_time_s for session in ready)
+        dispatch_at_s = oldest_request_s + 0.02
+        if fleet.now_s < dispatch_at_s:
+            return ScheduleDecision(
+                (), "wait for peers", defer_until_s=dispatch_at_s
+            )
+        return ScheduleDecision(
+            tuple(session.session_id for session in ready), "coalesced"
+        )
+
+
+def test_scheduler_can_defer_to_coalesce_a_later_request() -> None:
+    result = FleetSimulator(
+        [
+            RobotSpec("first", control_hz=10, chunk_size=1),
+            RobotSpec("second", control_hz=10, chunk_size=1),
+        ],
+        scheduler=CoalescingScheduler(),
+        backend=SyntheticBackend(
+            chunk_size=1, base_latency_s=0, per_item_latency_s=0
+        ),
+        max_batch_size=2,
+        observation_schedule=((0.0, "first"), (0.01, "second")),
+    ).run(0.1)
+
+    dispatch = next(
+        event for event in result.events if event.kind == "batch_dispatched"
+    )
+    assert dispatch.time_s == 0.02
+    assert dispatch.details["session_ids"] == ("first", "second")
+    assert result.count("dispatch_deferred") == 2
 
 
 def test_simulation_is_deterministic_and_batches_simultaneous_requests() -> None:

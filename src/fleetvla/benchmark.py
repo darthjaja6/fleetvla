@@ -568,6 +568,7 @@ def _validate_event_contract(
     kind = event["kind"]
     global_kinds = {
         "batch_dispatched",
+        "dispatch_deferred",
         "inference_started",
         "inference_completed",
         "scheduler_cost_estimate",
@@ -646,6 +647,15 @@ def _validate_event_contract(
                 raise ValueError("selected_state sessions must match the batch")
             _finite_number(state["buffer_horizon_s"], "buffer_horizon_s", minimum=0)
             _finite_number(state["request_age_s"], "request_age_s", minimum=0)
+        return
+
+    if kind == "dispatch_deferred":
+        details = _event_details(event, "defer_until_s", "reason")
+        _finite_number(details["defer_until_s"], "defer_until_s", minimum=0)
+        if details["defer_until_s"] <= event["time_s"]:
+            raise ValueError("dispatch deferral must be in the future")
+        if not isinstance(details["reason"], str):
+            raise ValueError("dispatch deferral reason must be a string")
         return
 
     if kind == "inference_completed":
@@ -838,6 +848,13 @@ def _validate_inference_lifecycle(
             registered.append(session_id)
             continue
         registration_ended = True
+        if kind == "dispatch_deferred" and (
+            stage is not None
+            or pending_requests
+            or expected_chunks
+            or expected_resets
+        ):
+            raise ValueError("dispatch deferral overlaps an inference lifecycle")
         if system and kind in {"session_reset", "session_disconnected"}:
             if session_id in batch_sessions:
                 invalidated_sessions.add(session_id)

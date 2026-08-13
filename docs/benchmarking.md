@@ -6,6 +6,12 @@ dimensions: scheduler and typed configuration, environment, backend latency
 profile, fleet scenario, per-robot control and network timing, action-execution
 policy, duration, and seed.
 
+The synthetic and trace environments are deterministic: their `seed` is a
+recorded experiment coordinate and changing it alone does not randomize request
+arrivals. Integrations that use stochastic policies or environments are
+responsible for consuming and recording the seed. Do not present repeated
+synthetic seeds as independent trials.
+
 The synthetic environment generates requests from each robot's live
 action-buffer state. The trace environment instead replays recorded observation
 arrival times from an artifact. The scheduler sees the same `FleetSnapshot` in
@@ -26,6 +32,10 @@ Metrics have explicit units and denominators:
   track, divided by run duration; and
 - `per_session`: useful actions, starvation, duration, and progress ratio for
   every robot.
+
+`dispatch_deferred` events record when a scheduler deliberately waited and the
+absolute virtual- or monotonic-clock deadline it requested. Use them with batch
+sizes and action age to evaluate whether coalescing helped or only added delay.
 
 Compare metric tables and timelines together. A scheduler may improve useful
 work while making one robot less fresh, or improve fairness by using smaller

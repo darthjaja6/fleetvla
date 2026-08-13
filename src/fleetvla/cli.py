@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import re
+import sys
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
-import sys
 
 from .benchmark import (
     BenchmarkConfig,
@@ -176,7 +178,8 @@ def _benchmark(args: argparse.Namespace) -> int:
         destinations = [output]
     else:
         destinations = [
-            output / f"{run.config.scenario}-{run.config.scheduler}-s{run.config.seed}.json"
+            output
+            / f"{run.config.scenario}-{_scheduler_filename(run.config.scheduler)}-s{run.config.seed}.json"
             for run in runs
         ]
     print("scheduler       actions  starvation  p95 age  fairness  batches")
@@ -194,6 +197,19 @@ def _benchmark(args: argparse.Namespace) -> int:
         if args.timeline:
             print(render_timeline(run))
     return 0
+
+
+def _scheduler_filename(specification: str) -> str:
+    if ":" in specification:
+        path, class_name = specification.rsplit(":", 1)
+        identity = hashlib.sha256(specification.encode()).hexdigest()[:8]
+        label = f"{Path(path).stem}-{class_name}-{identity}"
+    else:
+        label = specification
+    return (
+        re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.")
+        or "scheduler"
+    )
 
 
 def _libero(args: argparse.Namespace) -> int:

@@ -85,6 +85,8 @@ class FleetSimulator:
         self._events: list[tuple[float, int, int, str, Any]] = []
         self._next_order = 0
         self._backend_busy = False
+        self._dispatch_wakeup_s: float | None = None
+        self._deferred_ready: tuple[tuple[str, int | None], ...] | None = None
         self._has_run = False
         self._observation_schedule = observation_schedule
         if observation_schedule is not None:
@@ -185,6 +187,11 @@ class FleetSimulator:
             if commit_chunk is not None:
                 commit_chunk(chunk, accepted)
             return
+        if kind == "dispatch_wakeup":
+            if payload == self._dispatch_wakeup_s:
+                self._dispatch_wakeup_s = None
+                self._deferred_ready = None
+            return
         raise AssertionError(f"unknown simulation event: {kind}")
 
     def _maybe_dispatch(self) -> None:
@@ -192,8 +199,39 @@ class FleetSimulator:
             return
         snapshot = self.runtime.snapshot()
         if not snapshot.ready_sessions:
+            self._dispatch_wakeup_s = None
+            self._deferred_ready = None
+            return
+        ready = tuple(
+            (session.session_id, session.ready_sequence)
+            for session in snapshot.ready_sessions
+        )
+        if (
+            self._dispatch_wakeup_s is not None
+            and self.clock.now() < self._dispatch_wakeup_s
+            and ready == self._deferred_ready
+        ):
             return
         decision = self.scheduler.schedule(snapshot, self.backend.cost_model)
+        if decision.defer_until_s is not None:
+            if decision.defer_until_s <= self.clock.now():
+                raise ValueError("scheduler deferral must be in the future")
+            self._dispatch_wakeup_s = decision.defer_until_s
+            self._deferred_ready = ready
+            self.runtime.events.append(
+                self.clock.now(),
+                "dispatch_deferred",
+                defer_until_s=decision.defer_until_s,
+                reason=decision.reason,
+            )
+            self._push(
+                decision.defer_until_s,
+                "dispatch_wakeup",
+                decision.defer_until_s,
+            )
+            return
+        self._dispatch_wakeup_s = None
+        self._deferred_ready = None
         batch = self.runtime.prepare_batch(decision)
         result = self.backend.infer(batch, self.clock.now())
         self.runtime.events.append(
@@ -212,6 +250,7 @@ class FleetSimulator:
             "deliver": 1,
             "observe": 2,
             "control_tick": 3,
+            "dispatch_wakeup": 4,
         }[kind]
         heapq.heappush(
             self._events,

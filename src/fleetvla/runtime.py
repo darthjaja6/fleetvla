@@ -104,6 +104,8 @@ class FleetRuntime:
         return FleetSnapshot(now_s, sessions, self.max_batch_size)
 
     def prepare_batch(self, decision: ScheduleDecision) -> tuple[Observation, ...]:
+        if decision.defer_until_s is not None:
+            raise ValueError("cannot prepare a deferred schedule decision")
         if not decision.session_ids:
             raise ValueError("scheduler returned an empty batch while work was available")
         if len(decision.session_ids) > self.max_batch_size:

@@ -4,6 +4,8 @@ FleetVLA welcomes scheduling algorithms, workload definitions, and focused
 backend or endpoint adapters. Start by running the CPU path:
 
 ```bash
+python3 -m venv .venv
+. .venv/bin/activate
 python -m pip install -e '.[dev]'
 python -m pytest
 fleetvla demo

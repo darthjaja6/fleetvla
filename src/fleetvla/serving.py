@@ -53,6 +53,8 @@ class AsyncServingEngine:
         self._running = False
         self._dispatch_task: asyncio.Task[None] | None = None
         self._quarantined_backend_task: asyncio.Task[Any] | None = None
+        self._dispatch_not_before_s: float | None = None
+        self._deferred_ready: tuple[tuple[str, int | None], ...] | None = None
 
     async def run(self, duration_s: float) -> tuple:
         if not math.isfinite(duration_s) or duration_s <= 0:
@@ -86,7 +88,10 @@ class AsyncServingEngine:
                             self._record_missed_ticks(session_id, missed)
                         next_tick[session_id] = due_s + (missed + 1) * period_s
                         self._control_tick(session_id)
-                sleep_s = max(0.0005, min(next_tick.values()) - self.clock.now())
+                wake_s = min(next_tick.values())
+                if self._dispatch_not_before_s is not None:
+                    wake_s = min(wake_s, self._dispatch_not_before_s)
+                sleep_s = max(0.0005, wake_s - self.clock.now())
                 await asyncio.sleep(min(sleep_s, 0.005))
             for session_id, due_s in next_tick.items():
                 if due_s <= end_s:
@@ -204,9 +209,35 @@ class AsyncServingEngine:
                 raise exception
         snapshot = self.runtime.snapshot()
         if not snapshot.ready_sessions:
+            self._dispatch_not_before_s = None
+            self._deferred_ready = None
+            return
+        ready = tuple(
+            (session.session_id, session.ready_sequence)
+            for session in snapshot.ready_sessions
+        )
+        if (
+            self._dispatch_not_before_s is not None
+            and self.clock.now() < self._dispatch_not_before_s
+            and ready == self._deferred_ready
+        ):
             return
         costs = self.backend.cost_model
         decision = self.scheduler.schedule(snapshot, costs)
+        if decision.defer_until_s is not None:
+            if decision.defer_until_s <= self.clock.now():
+                raise ValueError("scheduler deferral must be in the future")
+            self._dispatch_not_before_s = decision.defer_until_s
+            self._deferred_ready = ready
+            self.runtime.events.append(
+                self.clock.now(),
+                "dispatch_deferred",
+                defer_until_s=decision.defer_until_s,
+                reason=decision.reason,
+            )
+            return
+        self._dispatch_not_before_s = None
+        self._deferred_ready = None
         batch = self.runtime.prepare_batch(decision)
         self.runtime.events.append(
             self.clock.now(),
