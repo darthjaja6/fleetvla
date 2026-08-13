@@ -1,0 +1,35 @@
+name: Integration proposal
+description: Propose a policy, simulator, robot, or middleware adapter
+title: "[integration]: "
+labels: ["integration", "design"]
+body:
+  - type: input
+    id: upstream
+    attributes:
+      label: Upstream project and revision
+      placeholder: URL and exact tested revision
+    validations:
+      required: true
+  - type: textarea
+    id: journey
+    attributes:
+      label: User journey
+      description: Describe setup, run, output, and why this integration matters.
+    validations:
+      required: true
+  - type: textarea
+    id: semantics
+    attributes:
+      label: Schema, timing, reset, and failure semantics
+    validations:
+      required: true
+  - type: dropdown
+    id: validation
+    attributes:
+      label: Available validation
+      options:
+        - Fake/protocol only
+        - Simulator
+        - Physical hardware
+    validations:
+      required: true

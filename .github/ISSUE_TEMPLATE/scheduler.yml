@@ -1,0 +1,33 @@
+name: Scheduler proposal
+description: Propose a scheduling algorithm or compatibility target
+title: "[scheduler]: "
+labels: ["scheduler", "design"]
+body:
+  - type: textarea
+    id: objective
+    attributes:
+      label: Objective and assumptions
+      description: Which fleet condition and trade-off does the algorithm address?
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Paper or implementation
+      placeholder: URL and revision, or original rationale
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Reproducible evidence
+      description: Workload, baselines, metrics, and expected trade-off.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Public contract impact
+      description: Explain required snapshot or cost-model changes; write none if unnecessary.
+    validations:
+      required: true

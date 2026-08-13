@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "scheduler": "adaptive-slack",
+  "scheduler_config": {},
+  "environment": "synthetic",
+  "backend": "synthetic",
+  "scenario": "heterogeneous-two-arm",
+  "robots": [
+    {
+      "session_id": "fast-arm",
+      "control_hz": 20,
+      "chunk_size": 4,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.12,
+      "start_delay_s": 0.0
+    },
+    {
+      "session_id": "slow-arm",
+      "control_hz": 10,
+      "chunk_size": 4,
+      "request_threshold_s": 0.15,
+      "network_latency_s": 0.02,
+      "latency_budget_s": 0.25,
+      "start_delay_s": 0.0
+    }
+  ],
+  "duration_s": 3.0,
+  "seed": 0,
+  "base_latency_s": 0.03,
+  "per_item_latency_s": 0.008,
+  "max_batch_size": 2,
+  "action_execution": "sequential-buffer",
+  "trace_source": null,
+  "observation_schedule": null
+}
