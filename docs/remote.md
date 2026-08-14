@@ -18,6 +18,18 @@ endpoint = RemoteEndpoint(
 )
 ```
 
+Run the complete standard-library localhost example before splitting the robot
+and serving processes across hosts:
+
+```bash
+python examples/remote_serving.py
+```
+
+It starts a temporary TCP robot server, performs admission, streams increasing
+observations, acknowledges each action as accepted and executed, exercises
+fallback, and shuts both sides down. The example is protocol plumbing, not a
+robot-side safety controller.
+
 The robot server must first send one JSON line and wait for commands:
 
 ```json

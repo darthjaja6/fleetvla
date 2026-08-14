@@ -110,3 +110,9 @@ version. System artifacts are not replayed bit-for-bit: GPU kernels, wall-clock
 scheduling, and physics are not deterministic virtual time. Report task success
 only for runs long enough to reach valid episode boundaries; the default
 three-second command is an integration smoke benchmark.
+
+For a local scheduler, the artifact embeds one source file, not its imported
+helper modules or third-party environment. Portable replay therefore requires a
+self-contained scheduler using only FleetVLA and the standard library. Treat
+other local-scheduler artifacts as environment-dependent and preserve their
+dependency manifest alongside the JSON.

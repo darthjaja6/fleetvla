@@ -1,6 +1,8 @@
 import asyncio
 import json
 import socket
+import subprocess
+import sys
 import threading
 import time
 
@@ -13,6 +15,18 @@ from fleetvla import (
     SessionConfig,
 )
 from fleetvla.endpoints import ObservationUnavailable
+
+
+def test_remote_serving_example_runs_end_to_end() -> None:
+    completed = subprocess.run(
+        [sys.executable, "examples/remote_serving.py"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "remote session:" in completed.stdout
+    assert "executed actions" in completed.stdout
 
 
 def _send(peer, message):

@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from threading import Lock
 from typing import Any, Protocol
 
 from .types import FieldSpec, SessionConfig
@@ -191,6 +192,7 @@ class ROS2Endpoint:
         self._fallback_message = fallback_message
         self._action_validator = action_validator or _finite_value
         self._latest_observation: Any | None = None
+        self._observation_lock = Lock()
         self._closed = False
         self._publisher = node.create_publisher(action_message_type, action_topic, 10)
         self._subscription = node.create_subscription(
@@ -201,15 +203,19 @@ class ROS2Endpoint:
         )
 
     def _on_observation(self, message: Any) -> None:
-        if not self._closed:
-            self._latest_observation = message
+        with self._observation_lock:
+            if not self._closed:
+                self._latest_observation = message
 
     def observe(self) -> Mapping[str, Any]:
-        if self._closed:
-            raise RuntimeError("endpoint is closed")
-        if self._latest_observation is None:
+        with self._observation_lock:
+            if self._closed:
+                raise RuntimeError("endpoint is closed")
+            message = self._latest_observation
+            self._latest_observation = None
+        if message is None:
             raise ObservationUnavailable("no ROS 2 observation has been received")
-        observation = self._observation_converter(self._latest_observation)
+        observation = self._observation_converter(message)
         validate_observation(observation, self.observation_schema)
         return observation
 
@@ -235,11 +241,13 @@ class ROS2Endpoint:
             try:
                 self.fallback()
             finally:
-                self._closed = True
-                self._latest_observation = None
+                with self._observation_lock:
+                    self._closed = True
+                    self._latest_observation = None
 
     def reconnect(self) -> None:
-        if not self._closed:
-            raise RuntimeError("endpoint is already connected")
-        self._latest_observation = None
-        self._closed = False
+        with self._observation_lock:
+            if not self._closed:
+                raise RuntimeError("endpoint is already connected")
+            self._latest_observation = None
+            self._closed = False

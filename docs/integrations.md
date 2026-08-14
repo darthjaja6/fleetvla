@@ -115,11 +115,13 @@ engine = AsyncServingEngine(
     action_execution="latest-indexed",
 )
 
+
 async def serve():
     try:
         return await engine.run(30.0)
     finally:
         await engine.aclose()
+
 
 events = asyncio.run(serve())
 system_metrics = serving_metrics(events, adapter.endpoints, 30.0)

@@ -116,6 +116,12 @@ A local-scheduler artifact also embeds the exact single-file source and its
 hash. Without the opt-in flag, FleetVLA refuses to execute code embedded in
 JSON. Built-in scheduler artifacts never require the flag.
 
+Replayable local schedulers must be self-contained in that one file and import
+only the Python standard library and FleetVLA. Artifact replay does not capture
+local helper modules or third-party package versions. If an experiment needs
+those dependencies, record and distribute its environment separately; the
+artifact alone is not a portable reproduction.
+
 ## What the snapshot means
 
 `buffer_horizon_s` is executable actions divided by control frequency; compare

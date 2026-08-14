@@ -43,6 +43,9 @@ converters because observation and command messages are robot-specific. A safe
 message is published on close or starvation. Keep the ROS 2 controller's own
 deadline, liveliness, watchdog, and joint-limit enforcement enabled; the bridge
 does not replace them.
+Each subscription sample is consumed at most once. Until another callback
+arrives, `observe()` reports `ObservationUnavailable`, so a stopped topic cannot
+create new action chunks from one cached sensor message.
 
 Reconnect is explicit. A LeRobot endpoint calls the driver's `connect` before
 the runtime marks the new generation connected. A ROS 2 endpoint clears its

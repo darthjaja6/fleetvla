@@ -30,6 +30,9 @@ than a context-free scalar score. Wall-clock serving evaluates synchronous
 `schedule()` methods on a deadline-bound worker and falls back to EDF on failure;
 keep them bounded, never sleep inside `schedule()`, and disclose measured
 decision cost for nontrivial search algorithms.
+Local scheduler artifacts embed one source file. Keep portable examples
+self-contained with standard-library and FleetVLA imports; otherwise include an
+environment manifest and state that artifact replay depends on it.
 
 For runtime or adapter changes, include tests for ordering, time units, stale
 generations, resets, disconnects, buffer bounds, and deterministic virtual-time

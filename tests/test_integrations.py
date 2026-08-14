@@ -152,6 +152,34 @@ def test_ros2_bridge_rejects_unsafe_or_closed_actions_and_waits_after_reconnect(
     assert node.publisher.messages == [{"joint": 0}, {"joint": 0}]
 
 
+def test_ros2_serving_consumes_each_sensor_sample_once() -> None:
+    node = FakeNode()
+    endpoint = ROS2Endpoint(
+        node,
+        SessionConfig("arm", control_hz=20, chunk_size=1, request_threshold_s=0),
+        observation_topic="/state",
+        observation_message_type=dict,
+        observation_converter=lambda message: message,
+        action_topic="/command",
+        action_message_type=dict,
+        action_converter=lambda action: action,
+        fallback_message=lambda: {"safe": 0},
+    )
+    node.callback({"sensor_sample_id": 7})
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=1, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+    )
+
+    events = asyncio.run(engine.run(0.18))
+    engine.close()
+
+    assert sum(event.kind == "observation_ready" for event in events) == 1
+    assert sum(event.kind == "inference_completed" for event in events) == 1
+    assert sum(event.kind == "action_executed" for event in events) == 1
+
+
 def test_ros2_validates_converted_command_and_fallback_message() -> None:
     node = FakeNode()
     endpoint = ROS2Endpoint(
