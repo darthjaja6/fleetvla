@@ -46,6 +46,14 @@ Public contract changes need a design discussion before implementation. During
 the pre-alpha period, compatibility is documented release by release; once a
 stable contract is declared, removals will require a deprecation period.
 
+## Maintainer and decisions
+
+FleetVLA is currently maintained by [@darthjaja6](https://github.com/darthjaja6),
+who owns release and public-contract decisions. Open a GitHub issue for design
+discussion; the maintainer records the decision there before an incompatible
+contract change is merged. This ownership will be updated here if the
+maintainer group changes.
+
 Use the repository issue forms before substantial scheduler, backend, or
 endpoint work. A scheduler contribution should also update the
 [scheduler gallery](docs/scheduler-gallery.md). Integration pull requests must

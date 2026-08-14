@@ -83,6 +83,28 @@ def _mixed_snapshot() -> FleetSnapshot:
     )
 
 
+def _priority_stress_snapshot() -> FleetSnapshot:
+    sessions = tuple(
+        SessionSnapshot(
+            session_id=f"priority-{index}",
+            generation=0,
+            ready_sequence=index,
+            request_time_s=index * 0.001,
+            buffer_steps=index % 5,
+            buffer_horizon_s=(index % 5) / 20,
+            control_hz=20,
+            latency_budget_s=0.2,
+            network_latency_s=0.005,
+            connected=True,
+            in_flight_sequence=None,
+            chunk_size=6 + index % 5,
+            service_weight=float(20 - index),
+        )
+        for index in range(20)
+    )
+    return FleetSnapshot(0.1, sessions, max_batch_size=8)
+
+
 def _validate_decision(decision: object, fleet: FleetSnapshot) -> ScheduleDecision:
     if not isinstance(decision, ScheduleDecision):
         raise SchedulerConformanceError("scheduler must return a ScheduleDecision")
@@ -139,8 +161,13 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
             action_execution="latest-indexed",
         ),
         _mixed_snapshot(),
+        _priority_stress_snapshot(),
     )
-    costs = InferenceCostModel(0, 0, (0.025, 0.04))
+    costs = InferenceCostModel(
+        0,
+        0,
+        (0.025, 0.04, 0.052, 0.064, 0.076, 0.088, 0.1, 0.112),
+    )
     first = factory()
     repeated = factory()
     for fleet in fleets:
@@ -156,7 +183,7 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
         raise SchedulerConformanceError(
             "scheduler selected or deferred work from an empty fleet"
         )
-    asyncio.run(_check_wall_clock(factory(), fleets[0], costs))
+    asyncio.run(_check_wall_clock(factory(), fleets[-1], costs))
     return (
         "selection or future deferral for ready work",
         "ScheduleDecision return type",

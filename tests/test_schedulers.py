@@ -247,6 +247,47 @@ def test_lookahead_matches_pinned_armory_l1_golden() -> None:
         assert decision.session_ids == tuple(expected["selected_batch"])
 
 
+@pytest.mark.parametrize("action_execution", ["sequential-buffer", "latest-indexed"])
+def test_lookahead_bounded_search_matches_exhaustive_candidates(
+    action_execution: str,
+) -> None:
+    sessions = tuple(
+        _session(
+            f"arm-{index}",
+            request_time_s=index * 0.01,
+            buffer_horizon_s=(index % 3) * 0.05,
+            network_latency_s=(index % 2) * 0.01,
+            chunk_size=6 + index,
+            service_weight=(3, 2, 2, 1, 1, 0.5)[index],
+        )
+        for index in range(6)
+    )
+    fleet = FleetSnapshot(0.2, sessions, 4, action_execution=action_execution)
+    costs = InferenceCostModel(0, 0, (0.04, 0.07, 0.11, 0.16))
+    expected: tuple[str, ...] | None = None
+    expected_score = -float("inf")
+    for batch in _candidate_batches(fleet, 4):
+        latency_s = costs.estimate(len(batch))
+        selected = set(batch)
+        reward = sum(
+            session.service_weight
+            * _new_chunk_executed_time(
+                session,
+                selected=session.session_id in selected,
+                inference_latency_s=latency_s,
+                horizon_s=1.0,
+                action_execution=action_execution,
+            )
+            for session in sessions
+        )
+        score = reward / latency_s
+        if score > expected_score:
+            expected = batch
+            expected_score = score
+
+    assert create_scheduler("lookahead").schedule(fleet, costs).session_ids == expected
+
+
 def test_measured_latency_profile_must_cover_requested_batch() -> None:
     costs = InferenceCostModel(0.02, 0.01, (0.05,))
 

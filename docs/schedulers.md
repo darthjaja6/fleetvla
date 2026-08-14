@@ -67,10 +67,11 @@ call schedulers directly and therefore have no wall-clock timeout.
 
 The conformance command runs changing ready-set shapes plus a mixed snapshot of
 ready, idle, in-flight, and disconnected sessions through the same scheduler
-state. It repeats that sequence on a fresh instance and executes a decision
-through the wall-clock worker's 10 ms budget. This catches fixture-ID
-assumptions, selection from non-ready lifecycle states, non-deterministic state
-transitions, and plugins that would immediately fall back in serving.
+state. It repeats that sequence on a fresh instance and executes a 20-session,
+20-priority-tier, batch-size-eight decision through the wall-clock worker's 10 ms
+budget. This catches fixture-ID assumptions, selection from non-ready lifecycle
+states, non-deterministic state transitions, and plugins that would immediately
+fall back in serving.
 
 Then run it on the versioned batching workload, which exposes batch-size choices:
 
@@ -152,6 +153,13 @@ configuration is validated before a run. For example:
 fleetvla benchmark --scheduler adaptive-slack \
   --scheduler-config '{"transport_margin_s": 0.02, "batch_size_limit": 2}'
 ```
+
+Lookahead preserves Armory's priority-tier-prefix candidate set but finds the
+best prefix counts with dynamic programming instead of enumerating every
+composition. For `T` distinct priority tiers and batch limit `B`, its bounded
+search is `O(T * B^3)` time and `O(T * B)` working state; the public conformance
+check exercises its supported 20-tier, batch-eight serving shape under the
+default 10 ms budget.
 
 When contributing a built-in algorithm, include its source paper or rationale,
 typed configuration, conformance test, a deterministic benchmark, and an

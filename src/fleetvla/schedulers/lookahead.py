@@ -55,13 +55,22 @@ class LookaheadScheduler:
         limit = min(len(ready), batch_limit(fleet, self.config.batch_size_limit))
         best_batch: tuple[str, ...] | None = None
         best_score = -math.inf
-        for batch in _candidate_batches(fleet, limit):
-            latency_s = costs.estimate(len(batch))
+        tiers = _priority_tiers(fleet)
+        for size in range(1, limit + 1):
+            latency_s = costs.estimate(size)
+            batch = _best_prefix_batch(
+                tiers,
+                size=size,
+                inference_latency_s=latency_s,
+                horizon_s=self.config.evaluation_horizon_s,
+                action_execution=fleet.action_execution,
+            )
+            selected = set(batch)
             reward = sum(
                 session.service_weight
                 * _new_chunk_executed_time(
                     session,
-                    selected=session.session_id in batch,
+                    selected=session.session_id in selected,
                     inference_latency_s=latency_s,
                     horizon_s=self.config.evaluation_horizon_s,
                     action_execution=fleet.action_execution,
@@ -85,18 +94,9 @@ class LookaheadScheduler:
 def _candidate_batches(fleet: FleetSnapshot, limit: int) -> tuple[tuple[str, ...], ...]:
     """Enumerate priority-tier prefixes in EDF order, matching Armory pruning."""
 
-    ordered = sorted(
-        fleet.ready_sessions,
-        key=lambda session: (
-            fleet.now_s + session.buffer_horizon_s,
-            session.request_time_s,
-            session.session_id,
-        ),
-    )
-    tiers: dict[float, list[str]] = {}
-    for session in ordered:
-        tiers.setdefault(session.service_weight, []).append(session.session_id)
-    tier_ids = [tiers[weight] for weight in sorted(tiers, reverse=True)]
+    tier_ids = [
+        [session.session_id for session in tier] for tier in _priority_tiers(fleet)
+    ]
     candidates: list[tuple[str, ...]] = []
     seen: set[tuple[str, ...]] = set()
     for size in range(1, limit + 1):
@@ -112,6 +112,74 @@ def _candidate_batches(fleet: FleetSnapshot, limit: int) -> tuple[tuple[str, ...
                 candidates.append(batch)
                 seen.add(batch)
     return tuple(candidates)
+
+
+def _priority_tiers(fleet: FleetSnapshot) -> tuple[tuple[SessionSnapshot, ...], ...]:
+    ordered = sorted(
+        fleet.ready_sessions,
+        key=lambda session: (
+            fleet.now_s + session.buffer_horizon_s,
+            session.request_time_s,
+            session.session_id,
+        ),
+    )
+    tiers: dict[float, list[SessionSnapshot]] = {}
+    for session in ordered:
+        tiers.setdefault(session.service_weight, []).append(session)
+    return tuple(tuple(tiers[weight]) for weight in sorted(tiers, reverse=True))
+
+
+def _best_prefix_batch(
+    tiers: tuple[tuple[SessionSnapshot, ...], ...],
+    *,
+    size: int,
+    inference_latency_s: float,
+    horizon_s: float,
+    action_execution: str,
+) -> tuple[str, ...]:
+    """Find the best tier-prefix composition without enumerating all of them."""
+
+    prefix_rewards: list[tuple[float, ...]] = []
+    for tier in tiers:
+        rewards = [0.0]
+        for session in tier:
+            rewards.append(
+                rewards[-1]
+                + session.service_weight
+                * _new_chunk_executed_time(
+                    session,
+                    selected=True,
+                    inference_latency_s=inference_latency_s,
+                    horizon_s=horizon_s,
+                    action_execution=action_execution,
+                )
+            )
+        prefix_rewards.append(tuple(rewards))
+
+    # Values are (reward, prefix counts). Lexicographic count tie-breaking
+    # preserves the order of _bounded_compositions and the pinned Armory fixture.
+    states: dict[int, tuple[float, tuple[int, ...]]] = {0: (0.0, ())}
+    for tier, rewards in zip(tiers, prefix_rewards):
+        next_states: dict[int, tuple[float, tuple[int, ...]]] = {}
+        for used, (reward, counts) in states.items():
+            for count in range(min(len(tier), size - used) + 1):
+                selected = used + count
+                candidate = (reward + rewards[count], counts + (count,))
+                current = next_states.get(selected)
+                if (
+                    current is None
+                    or candidate[0] > current[0]
+                    or (candidate[0] == current[0] and candidate[1] < current[1])
+                ):
+                    next_states[selected] = candidate
+        states = next_states
+
+    _, counts = states[size]
+    return tuple(
+        session.session_id
+        for tier, count in zip(tiers, counts)
+        for session in tier[:count]
+    )
 
 
 def _bounded_compositions(total: int, capacities: tuple[int, ...]):
