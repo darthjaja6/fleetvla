@@ -1239,8 +1239,12 @@ def test_contended_workload_exposes_scheduler_tradeoffs() -> None:
 def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None:
     scheduler_path = tmp_path / "custom.py"
     scheduler_path.write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
         "from fleetvla import ScheduleDecision\n"
+        "@dataclass\n"
         "class Custom:\n"
+        "    reason: str = 'embedded'\n"
         "    def schedule(self, fleet, costs):\n"
         "        del costs\n"
         "        if not fleet.ready_sessions:\n"
@@ -1251,7 +1255,7 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
         "            return ScheduleDecision((), 'wait', "
         "defer_until_s=oldest + 0.001)\n"
         "        return ScheduleDecision(tuple(s.session_id for s in "
-        "fleet.ready_sessions[:fleet.max_batch_size]), 'embedded')\n"
+        "fleet.ready_sessions[:fleet.max_batch_size]), self.reason)\n"
     )
     config = replace(default_config(), scheduler=f"{scheduler_path}:Custom")
     artifact = write_artifact(run_benchmark(config), tmp_path / "run.json")

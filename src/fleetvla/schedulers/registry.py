@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
+import sys
 import types
 from dataclasses import fields
 from pathlib import Path
@@ -61,13 +63,22 @@ class SchedulerRegistry:
         path = Path(filename).expanduser().resolve()
         if not path.is_file():
             raise ValueError(f"scheduler file does not exist: {path}")
-        module_spec = importlib.util.spec_from_file_location(
-            f"fleetvla_local_scheduler_{path.stem}", path
-        )
+        path_digest = hashlib.sha256(str(path).encode()).hexdigest()[:16]
+        module_name = f"fleetvla_local_scheduler_{path.stem}_{path_digest}"
+        module_spec = importlib.util.spec_from_file_location(module_name, path)
         if module_spec is None or module_spec.loader is None:
             raise ImportError(f"cannot load scheduler module: {path}")
         module = importlib.util.module_from_spec(module_spec)
-        module_spec.loader.exec_module(module)
+        previous_module = sys.modules.get(module_name)
+        sys.modules[module_name] = module
+        try:
+            module_spec.loader.exec_module(module)
+        except BaseException:
+            if previous_module is None:
+                sys.modules.pop(module_name, None)
+            else:
+                sys.modules[module_name] = previous_module
+            raise
         try:
             return cast(type[Any], getattr(module, class_name))
         except AttributeError as error:

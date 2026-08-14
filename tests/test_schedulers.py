@@ -307,6 +307,25 @@ def test_local_scheduler_loads_without_registry_edit() -> None:
     assert len(check_scheduler(lambda: scheduler)) == 9
 
 
+def test_annotated_dataclass_scheduler_passes_conformance(tmp_path) -> None:
+    path = tmp_path / "custom.py"
+    path.write_text(
+        "from __future__ import annotations\n"
+        "from dataclasses import dataclass\n"
+        "from fleetvla import ScheduleDecision\n"
+        "@dataclass\n"
+        "class Custom:\n"
+        "    reason: str = 'custom'\n"
+        "    def schedule(self, fleet, costs):\n"
+        "        del costs\n"
+        "        return ScheduleDecision(tuple(s.session_id for s in "
+        "fleet.ready_sessions[:fleet.max_batch_size]), self.reason)\n"
+    )
+    specification = f"{path}:Custom"
+
+    assert len(check_scheduler(lambda: create_scheduler(specification))) == 9
+
+
 def test_conformance_rejects_scheduler_over_serving_budget() -> None:
     class Blocking:
         def schedule(self, fleet, costs):
