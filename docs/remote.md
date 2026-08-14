@@ -67,6 +67,9 @@ acknowledgements fail the endpoint. FleetVLA counts an action as useful only
 after `executed`; TCP delivery alone is never robot execution. Configure the
 ACK bound with `RemoteEndpoint(..., acknowledgement_timeout_s=...)` and the
 total callback bound with `AsyncServingEngine(..., endpoint_timeout_s=...)`.
+If terminal acknowledgement fails after `accepted`, FleetVLA preserves that
+acceptance in delivery metrics while still rejecting the action as useful and
+disconnecting the session.
 
 Fallback envelopes contain a `payload`; the final `close` envelope does not.
 Every envelope includes `protocol_version` and `session_id`. Messages are UTF-8

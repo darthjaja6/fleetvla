@@ -15,7 +15,7 @@ from .endpoints import (
     ObservationUnavailable,
     validate_observation,
 )
-from .remote import RemoteActionReceipt
+from .remote import RemoteActionFailure, RemoteActionReceipt
 from .runtime import FleetRuntime
 from .scheduler_execution import SchedulerExecutionError, SchedulerRunner
 from .schedulers import EDFScheduler, Scheduler
@@ -245,6 +245,8 @@ class AsyncServingEngine:
             if execute_command is None:
                 self._record_action_accepted(command)
         except Exception as error:
+            if isinstance(error, RemoteActionFailure):
+                self._record_action_accepted(command)
             self.runtime.acknowledge(command, accepted=False)
             self.runtime.events.append(
                 self.clock.now(),

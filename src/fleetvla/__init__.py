@@ -4,6 +4,7 @@ from .backend import SyntheticBackend
 from .clock import VirtualClock
 from .remote import (
     JsonlSocketTransport,
+    RemoteActionFailure,
     RemoteActionReceipt,
     RemoteEndpoint,
     RemoteTransport,
@@ -48,6 +49,7 @@ __all__ = [
     "Observation",
     "RobotSpec",
     "RemoteEndpoint",
+    "RemoteActionFailure",
     "RemoteActionReceipt",
     "RemoteTransport",
     "RoundRobinScheduler",

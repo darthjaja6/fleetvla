@@ -32,6 +32,12 @@ class RemoteActionReceipt:
             raise ValueError("an executed remote action must first be accepted")
 
 
+class RemoteActionFailure(RuntimeError):
+    """Terminal acknowledgement failed after the robot accepted a command."""
+
+    accepted = True
+
+
 class RemoteTransport(Protocol):
     """Observation/action channel admitted for one configured session."""
 
@@ -238,6 +244,15 @@ class JsonlSocketTransport:
                     if remaining_s <= 0:
                         raise TimeoutError("remote action acknowledgement timed out")
                     self._state_changed.wait(remaining_s)
+        except Exception as error:
+            with self._state_changed:
+                pending = self._pending_actions.get(key)
+                accepted = pending is not None and pending[1]
+            if accepted:
+                raise RemoteActionFailure(
+                    "remote action was accepted but terminal acknowledgement failed"
+                ) from error
+            raise
         finally:
             with self._state_changed:
                 self._pending_actions.pop(key, None)
