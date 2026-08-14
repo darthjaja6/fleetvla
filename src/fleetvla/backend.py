@@ -62,6 +62,7 @@ class SyntheticBackend:
                     )
                 ),
                 produced_at_s=produced_at_s,
+                action_index_start=observation.action_index_start,
             )
             for observation in batch
         )

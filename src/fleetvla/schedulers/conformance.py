@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 
 from ..types import (
@@ -12,12 +13,14 @@ from ..types import (
 )
 from .base import Scheduler
 
+_SERVING_DECISION_BUDGET_S = 0.01
+
 
 class SchedulerConformanceError(ValueError):
     """A scheduler does not satisfy the public decision contract."""
 
 
-def _snapshot(session_ids: tuple[str, ...]) -> FleetSnapshot:
+def _snapshot(session_ids: tuple[str, ...], *, now_s: float = 0.1) -> FleetSnapshot:
     sessions = tuple(
         SessionSnapshot(
             session_id=session_id,
@@ -34,7 +37,52 @@ def _snapshot(session_ids: tuple[str, ...]) -> FleetSnapshot:
         )
         for index, session_id in enumerate(session_ids)
     )
-    return FleetSnapshot(0.1, sessions, max_batch_size=2)
+    return FleetSnapshot(now_s, sessions, max_batch_size=2)
+
+
+def _validate_decision(decision: object, fleet: FleetSnapshot) -> ScheduleDecision:
+    if not isinstance(decision, ScheduleDecision):
+        raise SchedulerConformanceError("scheduler must return a ScheduleDecision")
+    if not isinstance(decision.reason, str):
+        raise SchedulerConformanceError("schedule decision reason must be a string")
+    if len(set(decision.session_ids)) != len(decision.session_ids):
+        raise SchedulerConformanceError(
+            "scheduler decision contains duplicate sessions"
+        )
+    if not decision.session_ids and decision.defer_until_s is None:
+        raise SchedulerConformanceError(
+            "scheduler must select work or defer to a future time"
+        )
+    if decision.defer_until_s is not None and decision.defer_until_s <= fleet.now_s:
+        raise SchedulerConformanceError(
+            "scheduler deferral must be later than fleet.now_s"
+        )
+    if len(decision.session_ids) > fleet.max_batch_size:
+        raise SchedulerConformanceError("scheduler exceeded max_batch_size")
+    ready = {session.session_id for session in fleet.ready_sessions}
+    if not set(decision.session_ids) <= ready:
+        raise SchedulerConformanceError(
+            "scheduler selected a session that is not ready"
+        )
+    return decision
+
+
+async def _check_wall_clock(
+    scheduler: Scheduler, fleet: FleetSnapshot, costs: InferenceCostModel
+) -> None:
+    from ..scheduler_execution import SchedulerExecutionError, SchedulerRunner
+
+    runner = SchedulerRunner(scheduler)
+    try:
+        try:
+            result = await runner.decide(
+                fleet, costs, timeout_s=_SERVING_DECISION_BUDGET_S
+            )
+        except SchedulerExecutionError as error:
+            raise SchedulerConformanceError(str(error)) from error
+        _validate_decision(result.decision, fleet)
+    finally:
+        runner.close()
 
 
 def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
@@ -42,38 +90,17 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
 
     fleets = (
         _snapshot(("arm-a", "arm-b", "arm-c")),
-        _snapshot(("robot-x", "robot-y")),
+        _snapshot(("robot-x", "robot-y"), now_s=0.12),
     )
     costs = InferenceCostModel(0.02, 0.005)
+    first = factory()
+    repeated = factory()
     for fleet in fleets:
-        decision = factory().schedule(fleet, costs)
-        if not isinstance(decision, ScheduleDecision):
-            raise SchedulerConformanceError("scheduler must return a ScheduleDecision")
-        if not isinstance(decision.reason, str):
-            raise SchedulerConformanceError("schedule decision reason must be a string")
-        if len(set(decision.session_ids)) != len(decision.session_ids):
+        decision = _validate_decision(first.schedule(fleet, costs), fleet)
+        repeated_decision = _validate_decision(repeated.schedule(fleet, costs), fleet)
+        if repeated_decision != decision:
             raise SchedulerConformanceError(
-                "scheduler decision contains duplicate sessions"
-            )
-        if not decision.session_ids and decision.defer_until_s is None:
-            raise SchedulerConformanceError(
-                "scheduler must select work or defer to a future time"
-            )
-        if decision.defer_until_s is not None and decision.defer_until_s <= fleet.now_s:
-            raise SchedulerConformanceError(
-                "scheduler deferral must be later than fleet.now_s"
-            )
-        if len(decision.session_ids) > fleet.max_batch_size:
-            raise SchedulerConformanceError("scheduler exceeded max_batch_size")
-        ready = {session.session_id for session in fleet.ready_sessions}
-        if not set(decision.session_ids) <= ready:
-            raise SchedulerConformanceError(
-                "scheduler selected a session that is not ready"
-            )
-        repeated = factory().schedule(fleet, costs)
-        if repeated != decision:
-            raise SchedulerConformanceError(
-                "fresh scheduler instances are not deterministic"
+                "scheduler instances are not deterministic across sequential calls"
             )
     empty = FleetSnapshot(fleets[0].now_s, (), fleets[0].max_batch_size)
     empty_decision = factory().schedule(empty, costs)
@@ -81,12 +108,15 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
         raise SchedulerConformanceError(
             "scheduler selected or deferred work from an empty fleet"
         )
+    asyncio.run(_check_wall_clock(factory(), fleets[0], costs))
     return (
         "selection or future deferral for ready work",
         "ScheduleDecision return type",
         "unique sessions",
         "ready-session subset",
         "batch-size limit",
-        "deterministic fresh instance",
+        "deterministic sequential state",
+        "ready-set change handling",
+        "10 ms serving decision budget",
         "empty-fleet behavior",
     )

@@ -38,6 +38,7 @@ class AsyncServingEngine:
         max_batch_size: int = 8,
         inference_timeout_s: float | None = None,
         scheduler_timeout_s: float = 0.01,
+        action_execution: str = "sequential-buffer",
     ) -> None:
         if not endpoints:
             raise ValueError("at least one endpoint is required")
@@ -60,7 +61,11 @@ class AsyncServingEngine:
         self._fallback_scheduler = EDFScheduler()
         self._using_scheduler_fallback = False
         self.clock = MonotonicClock()
-        self.runtime = FleetRuntime(self.clock, max_batch_size=max_batch_size)
+        self.runtime = FleetRuntime(
+            self.clock,
+            max_batch_size=max_batch_size,
+            action_execution=action_execution,
+        )
         for endpoint in endpoints:
             self.runtime.register(endpoint.session_config)
         self._running = False

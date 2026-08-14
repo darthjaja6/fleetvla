@@ -59,6 +59,12 @@ sleeping. This isolates serving timing and failure for trusted plugins; it is
 not a security sandbox for untrusted Python. Deterministic simulator benchmarks
 call schedulers directly and therefore have no wall-clock timeout.
 
+The conformance command runs two sequential ready-set shapes through the same
+scheduler state, repeats that sequence on a fresh instance, and executes a
+decision through the wall-clock worker's 10 ms budget. This catches fixture-ID
+assumptions, non-deterministic state transitions, and plugins that would
+immediately fall back in serving.
+
 Then run it on the versioned batching workload, which exposes batch-size choices:
 
 ```bash

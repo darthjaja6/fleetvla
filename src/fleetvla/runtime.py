@@ -17,6 +17,8 @@ from .types import (
     SessionSnapshot,
 )
 
+ACTION_EXECUTION_POLICIES = ("sequential-buffer", "latest-indexed")
+
 
 class Clock(Protocol):
     def now(self) -> float: ...
@@ -33,6 +35,7 @@ class _Session:
     connected: bool = True
     acknowledged: set[tuple[int, int, int]] = field(default_factory=set)
     outstanding: set[tuple[int, int, int]] = field(default_factory=set)
+    next_action_index: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,11 +50,20 @@ class _BufferedAction:
 class FleetRuntime:
     """Owns lifecycle state; schedulers only receive immutable snapshots."""
 
-    def __init__(self, clock: Clock, *, max_batch_size: int = 8) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        *,
+        max_batch_size: int = 8,
+        action_execution: str = "sequential-buffer",
+    ) -> None:
         if max_batch_size <= 0:
             raise ValueError("max_batch_size must be positive")
+        if action_execution not in ACTION_EXECUTION_POLICIES:
+            raise ValueError(f"unsupported action execution policy: {action_execution}")
         self.clock = clock
         self.max_batch_size = max_batch_size
+        self.action_execution = action_execution
         self.events = EventLog()
         self._sessions: dict[str, _Session] = {}
 
@@ -73,6 +85,7 @@ class FleetRuntime:
             generation=session.generation,
             captured_at_s=self.clock.now(),
             payload=payload,
+            action_index_start=session.next_action_index,
         )
         session.next_sequence += 1
         session.ready = observation
@@ -181,15 +194,32 @@ class FleetRuntime:
             return False
         observation = session.in_flight
         session.in_flight = None
+        first_action_index = 0
+        actions = chunk.actions
+        if self.action_execution == "latest-indexed":
+            if chunk.action_index_start != observation.action_index_start:
+                self.events.append(
+                    self.clock.now(), "chunk_rejected_unexpected", chunk.session_id
+                )
+                return False
+            first_action_index = max(
+                0, session.next_action_index - chunk.action_index_start
+            )
+            actions = chunk.actions[first_action_index:]
+            session.actions.clear()
         session.actions.extend(
             _BufferedAction(
                 value=action,
                 observation_sequence=chunk.observation_sequence,
                 observation_captured_at_s=observation.captured_at_s,
-                action_index=index,
+                action_index=(
+                    index
+                    if self.action_execution == "sequential-buffer"
+                    else chunk.action_index_start + index
+                ),
                 generation=chunk.generation,
             )
-            for index, action in enumerate(chunk.actions)
+            for index, action in enumerate(actions, start=first_action_index)
         )
         self.events.append(
             self.clock.now(),
@@ -214,6 +244,8 @@ class FleetRuntime:
             self.events.append(self.clock.now(), "action_starved", session_id)
             return None
         action = session.actions.popleft()
+        if self.action_execution == "latest-indexed":
+            session.next_action_index = action.action_index + 1
         self.events.append(
             self.clock.now(),
             "action_dequeued",
@@ -282,6 +314,7 @@ class FleetRuntime:
         session.actions.clear()
         session.acknowledged.clear()
         session.outstanding.clear()
+        session.next_action_index = 0
         self.events.append(self.clock.now(), "session_disconnected", session_id)
 
     def reconnect(self, session_id: str) -> None:
@@ -304,6 +337,7 @@ class FleetRuntime:
         session.actions.clear()
         session.acknowledged.clear()
         session.outstanding.clear()
+        session.next_action_index = 0
         self.events.append(
             self.clock.now(), "session_reset", session_id, generation=session.generation
         )

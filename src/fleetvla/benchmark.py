@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .backend import SyntheticBackend
+from .runtime import ACTION_EXECUTION_POLICIES
 from .schedulers import create_scheduler
 from .simulation import FleetSimulator, RobotSpec, SimulationResult
 from .trace import Event
@@ -69,7 +70,7 @@ class BenchmarkConfig:
             raise ValueError("robot session_id values must be unique")
         for robot in self.robots:
             robot.session_config()
-        if self.action_execution != "sequential-buffer":
+        if self.action_execution not in ACTION_EXECUTION_POLICIES:
             raise ValueError(
                 f"unsupported action execution policy: {self.action_execution}"
             )
@@ -228,6 +229,7 @@ def run_benchmark(config: BenchmarkConfig) -> BenchmarkRun:
         backend=backend,
         scheduler=scheduler,
         max_batch_size=config.max_batch_size,
+        action_execution=config.action_execution,
         observation_schedule=observation_schedule,
     ).run(config.duration_s)
     return BenchmarkRun(config, result, compute_metrics(result, config.robots))

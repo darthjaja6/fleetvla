@@ -140,6 +140,7 @@ class LeRobotPolicyBackend:
                         "output_shape": tuple(int(size) for size in action_batch.shape),
                         "execution_horizon": execution_horizon,
                     },
+                    action_index_start=observation.action_index_start,
                 )
             )
         return BackendResult(latency_s, tuple(chunks))

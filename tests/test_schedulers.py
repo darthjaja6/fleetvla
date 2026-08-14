@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import pytest
@@ -47,7 +48,7 @@ def test_all_registered_schedulers_pass_public_conformance() -> None:
         "round-robin",
     )
     for name in registry.names():
-        assert len(check_scheduler(lambda name=name: create_scheduler(name))) == 7
+        assert len(check_scheduler(lambda name=name: create_scheduler(name))) == 9
 
 
 def test_conformance_accepts_future_dispatch_deferral() -> None:
@@ -58,7 +59,7 @@ def test_conformance_accepts_future_dispatch_deferral() -> None:
                 return ScheduleDecision((), "no work")
             return ScheduleDecision((), "wait for peers", fleet.now_s + 0.01)
 
-    assert len(check_scheduler(Deferred)) == 7
+    assert len(check_scheduler(Deferred)) == 9
 
 
 def test_conformance_rejects_non_future_dispatch_deferral() -> None:
@@ -146,7 +147,20 @@ def test_measured_latency_profile_must_cover_requested_batch() -> None:
 def test_local_scheduler_loads_without_registry_edit() -> None:
     path = Path(__file__).parents[1] / "examples" / "my_scheduler.py"
     scheduler = create_scheduler(f"{path}:SmallestBufferFirst")
-    assert len(check_scheduler(lambda: scheduler)) == 7
+    assert len(check_scheduler(lambda: scheduler)) == 9
+
+
+def test_conformance_rejects_scheduler_over_serving_budget() -> None:
+    class Blocking:
+        def schedule(self, fleet, costs):
+            del costs
+            if not fleet.ready_sessions:
+                return ScheduleDecision((), "no work")
+            time.sleep(0.03)
+            return ScheduleDecision((fleet.ready_sessions[0].session_id,), "too slow")
+
+    with pytest.raises(ValueError, match="decision budget"):
+        check_scheduler(Blocking)
 
 
 def test_unknown_typed_config_fails_before_a_run() -> None:

@@ -82,10 +82,10 @@ all state changes are emitted as structured events.
 
 ## Try scheduling ideas
 
-Compare all built-in algorithms on the same three-arm workload:
+Compare all built-in algorithms on a three-arm workload with two batch slots:
 
 ```bash
-fleetvla benchmark --config benchmarks/contention.json \
+fleetvla benchmark --config benchmarks/batching.json \
   --scheduler fifo --scheduler round-robin --scheduler edf \
   --scheduler adaptive-slack --scheduler lookahead \
   --output results --timeline
@@ -96,8 +96,11 @@ batch sizes. Every JSON artifact includes the complete configuration, raw event
 trace, multi-dimensional metrics, and a checksum. Reproduce one with:
 
 ```bash
-fleetvla replay results/contended-three-arm-fifo-s0.json
+fleetvla replay results/batching-three-arm-fifo-s0.json
 ```
+
+Use `benchmarks/contention.json` separately for a single-slot ordering and
+fairness stress test; it cannot demonstrate batching gains.
 
 To implement and load a scheduler without modifying FleetVLA, follow the
 [scheduler guide](docs/schedulers.md). The path from a 15-line local class to
@@ -111,6 +114,11 @@ dynamically batches SmolVLA-style action chunks; `LiberoVectorAdapter` exposes
 parallel simulator slots without leaking rewards or privileged state into
 scheduler inputs. LeRobot robot and ROS 2 endpoints keep conversion and fallback
 at the local execution boundary.
+
+For a robot process on another host, `RemoteEndpoint` and
+`JsonlSocketTransport` provide a versioned one-session admission handshake and
+newline-delimited observation/action/fallback protocol using only the standard
+library. See the [remote transport guide](docs/remote.md).
 
 Start with the [integration guide](docs/integrations.md), then read the
 [physical endpoint safety guide](docs/physical-robots.md) before connecting

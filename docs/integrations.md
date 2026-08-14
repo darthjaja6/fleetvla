@@ -6,6 +6,11 @@ a scheduler chooses ready session IDs from frozen state, and an environment
 adapter retains task-specific rewards and success signals. The scheduler code
 does not change when any of the other three change.
 
+Remote robot processes use the same endpoint contract through the
+[versioned JSON-lines transport](remote.md). Admission binds one connection to
+one configured session before its observations can enter the runtime; action,
+fallback, validation, and disconnect behavior remain endpoint-local.
+
 ## SmolVLA and LeRobot policies
 
 The optional backend follows LeRobot 0.6.2's public

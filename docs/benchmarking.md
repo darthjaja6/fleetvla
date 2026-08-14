@@ -10,6 +10,13 @@ A backend may declare a linear latency model or an exact measured latency for
 each supported batch size. Exact profiles are preferable when evaluating
 dynamic batch-size algorithms because a fitted line can change their decisions.
 
+`action_execution` is an explicit workload coordinate. `sequential-buffer`
+finishes already buffered actions before a new chunk. `latest-indexed` assigns
+each observation the next global action index; when its result arrives, actions
+whose indices already executed are skipped and the remaining latest chunk
+replaces older buffered predictions. Compare both when overlapping predictions
+or closed-loop freshness matter. Neither label should be omitted from a result.
+
 The synthetic and trace environments are deterministic: their `seed` is a
 recorded experiment coordinate and changing it alone does not randomize request
 arrivals. Integrations that use stochastic policies or environments are
@@ -58,8 +65,8 @@ Use `benchmarks/contention.json` to emphasize deadline/fairness choices under a
 single-slot backend. Use `benchmarks/batching.json` to expose the latency versus
 batch-size decision with two batch slots. The
 `benchmarks/armory-one-fast-l40s.json` systems proxy fixes the paper's published
-L40S latency profile and heterogeneous horizons for a controlled RR/EDF/
-Lookahead comparison. None is a universal score.
+L40S latency profile, heterogeneous horizons, and `latest-indexed` execution
+for a controlled RR/EDF/Lookahead comparison. None is a universal score.
 
 The optional system track uses the same scheduler with measured policy and
 simulator latency:

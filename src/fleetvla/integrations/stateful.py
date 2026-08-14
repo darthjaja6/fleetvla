@@ -93,6 +93,7 @@ class StatefulPolicyBackend:
                     actions=prediction.actions,
                     produced_at_s=started_at_s + latency_s,
                     auxiliary=prediction.auxiliary,
+                    action_index_start=observation.action_index_start,
                 )
             )
         return BackendResult(latency_s, tuple(chunks))

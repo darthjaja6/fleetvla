@@ -63,6 +63,61 @@ def test_chunk_must_match_declared_action_horizon() -> None:
     }
 
 
+def test_latest_indexed_chunk_replaces_buffer_and_skips_executed_indices() -> None:
+    clock = VirtualClock()
+    runtime = FleetRuntime(clock, action_execution="latest-indexed")
+    runtime.register(SessionConfig("arm", control_hz=10, chunk_size=3))
+    first = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    runtime.accept(
+        ActionChunk(
+            "arm",
+            first.sequence,
+            0,
+            ("old-0", "old-1", "old-2"),
+            clock.now(),
+            action_index_start=first.action_index_start,
+        )
+    )
+    assert runtime.consume_action("arm") == "old-0"
+
+    second = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    assert second.action_index_start == 1
+    assert runtime.consume_action("arm") == "old-1"
+    runtime.accept(
+        ActionChunk(
+            "arm",
+            second.sequence,
+            0,
+            ("new-1", "new-2", "new-3"),
+            clock.now(),
+            action_index_start=second.action_index_start,
+        )
+    )
+
+    command = runtime.dequeue_action("arm")
+    assert command is not None
+    assert command.value == "new-2"
+    assert command.action_index == 2
+    assert runtime.snapshot().sessions[0].buffer_steps == 1
+
+
+def test_sequential_buffer_retains_older_chunk_actions() -> None:
+    runtime = FleetRuntime(VirtualClock(), action_execution="sequential-buffer")
+    runtime.register(SessionConfig("arm", control_hz=10, chunk_size=2))
+    first = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    runtime.accept(ActionChunk("arm", first.sequence, 0, ("old-0", "old-1"), 0))
+    assert runtime.consume_action("arm") == "old-0"
+
+    second = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    runtime.accept(ActionChunk("arm", second.sequence, 0, ("new-0", "new-1"), 0))
+
+    assert runtime.consume_action("arm") == "old-1"
+
+
 def test_disconnect_requires_explicit_reconnect() -> None:
     runtime = FleetRuntime(VirtualClock())
     runtime.register(SessionConfig("arm", control_hz=10, chunk_size=2))

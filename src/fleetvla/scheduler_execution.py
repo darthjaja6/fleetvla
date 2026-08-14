@@ -8,7 +8,7 @@ import queue
 import threading
 from dataclasses import dataclass
 
-from .schedulers import Scheduler
+from .schedulers.base import Scheduler
 from .types import FleetSnapshot, InferenceCostModel, ScheduleDecision
 
 

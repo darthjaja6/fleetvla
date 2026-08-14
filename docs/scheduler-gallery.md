@@ -38,20 +38,22 @@ prefix strategy inspected at commit `e876202ede99723f4be40d8d7cab31847bbd14a9`.
 
 The versioned `armory-one-fast-l40s` workload holds ten 20 Hz sessions, fast/slow
 execution horizons 6/10, max batch size 3, 5 ms action delivery, and the paper's
-published L40S batch latencies fixed for every scheduler. The fast session has
-weight 5 and the nine slow sessions weight 1. In the deterministic 10-second
-systems proxy:
+published L40S batch latencies fixed for every scheduler. It uses
+`latest-indexed` execution: a returned chunk skips action indices already
+executed during inference and replaces older buffered predictions. The fast
+session has weight 5 and the nine slow sessions weight 1. In the deterministic
+10-second systems proxy:
 
 | Scheduler | Useful actions | Starvation | Fast progress | Representative slow progress | Artifact |
 |---|---:|---:|---:|---:|---|
-| Round robin | 1,737 | 13.2% | 73.0% | 90.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-round-robin-s0.json) |
-| EDF | 1,755 | 12.2% | 81.0% | 90.5% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-edf-s0.json) |
-| Lookahead @ 5 | 1,650 | 17.5% | 99.0% | 82.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-lookahead-s0.json) |
+| Round robin | 1,497 | 25.1% | 46.0% | 81.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-round-robin-s0.json) |
+| EDF | 1,481 | 25.9% | 73.0% | 80.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-edf-s0.json) |
+| Lookahead @ 5 | 1,294 | 35.3% | 92.0% | 63.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-lookahead-s0.json) |
 
 This comparison demonstrates the intended control surface, not universal
-dominance: Lookahead nearly eliminates fast-tier starvation by spending slow-
-tier and aggregate progress. It is an apples-to-apples FleetVLA scheduler
-comparison and a parameter-compatible systems proxy, not a reproduction of
+dominance: Lookahead protects fast-tier progress by spending slow-tier and
+aggregate progress. It is an apples-to-apples FleetVLA scheduler comparison
+and a parameter-compatible systems proxy, not a reproduction of
 Armory's policy success or real-robot throughput. Armory remains authoritative
 for its full execution mirror, OpenPI/GR00T stack, LIBERO experiments, and
 physical results.

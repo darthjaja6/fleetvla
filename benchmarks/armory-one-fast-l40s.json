@@ -113,7 +113,7 @@
   "per_item_latency_s": 0.0,
   "batch_latency_s": [0.073, 0.1098, 0.1424, 0.1775, 0.2111],
   "max_batch_size": 3,
-  "action_execution": "sequential-buffer",
+  "action_execution": "latest-indexed",
   "trace_source": null,
   "observation_schedule": null
 }

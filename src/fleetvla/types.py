@@ -46,6 +46,7 @@ class Observation:
     generation: int
     captured_at_s: float
     payload: Any = None
+    action_index_start: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +132,7 @@ class ActionChunk:
     actions: tuple[Any, ...]
     produced_at_s: float
     auxiliary: Mapping[str, Any] = field(default_factory=dict)
+    action_index_start: int = 0
 
     def __post_init__(self) -> None:
         if not self.actions:

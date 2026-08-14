@@ -24,7 +24,9 @@ decision cost for nontrivial search algorithms.
 
 For runtime or adapter changes, include tests for ordering, time units, stale
 generations, resets, disconnects, buffer bounds, and deterministic virtual-time
-behavior where relevant. Physical endpoints must retain local watchdogs and
+behavior where relevant. Remote protocol changes must preserve version and
+session admission, monotonic observation sequences, and local fallback.
+Physical endpoints must retain local watchdogs and
 safety limits; the central scheduler is not a safety controller.
 
 Keep changes reviewable and avoid unrelated refactors or new dependencies.

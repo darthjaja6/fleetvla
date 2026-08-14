@@ -69,6 +69,7 @@ class FleetSimulator:
         backend: SyntheticBackend | None = None,
         scheduler: Scheduler | None = None,
         max_batch_size: int = 8,
+        action_execution: str = "sequential-buffer",
         observation_schedule: tuple[tuple[float, str], ...] | None = None,
     ) -> None:
         if not robots:
@@ -77,7 +78,11 @@ class FleetSimulator:
             raise ValueError("robot session_id values must be unique")
         self.robots = {robot.session_id: robot for robot in robots}
         self.clock = VirtualClock()
-        self.runtime = FleetRuntime(self.clock, max_batch_size=max_batch_size)
+        self.runtime = FleetRuntime(
+            self.clock,
+            max_batch_size=max_batch_size,
+            action_execution=action_execution,
+        )
         for robot in robots:
             self.runtime.register(robot.session_config())
         self.backend = backend or SyntheticBackend(
