@@ -32,6 +32,7 @@ def test_remote_serving_example_runs_end_to_end() -> None:
 
     assert "remote session:" in completed.stdout
     assert "executed actions" in completed.stdout
+    assert "fallbacks handled" in completed.stdout
 
 
 def _send(peer, message):
