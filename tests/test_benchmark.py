@@ -141,6 +141,8 @@ def _valid_system_artifact():
                 "scheduler": "edf",
                 "scheduler_config": {},
                 "scheduler_timeout_s": 0.01,
+                "inference_timeout_s": 10.0,
+                "endpoint_timeout_s": 0.1,
                 "duration_s": 1.0,
                 "max_batch_size": 1,
                 "control_hz": 1.0,

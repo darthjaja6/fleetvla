@@ -28,6 +28,7 @@ class LeRobotPolicyBackend:
         predicted_base_latency_s: float = 0.05,
         predicted_per_item_latency_s: float = 0.01,
         cost_update_alpha: float = 0.2,
+        max_batch_size: int = 8,
         execution_horizon: int | None = None,
     ) -> None:
         if not hasattr(policy, "predict_action_chunk"):
@@ -37,8 +38,22 @@ class LeRobotPolicyBackend:
         self.policy = policy
         self.preprocessor = preprocessor or (lambda batch: batch)
         self.postprocessor = postprocessor or (lambda action: action)
-        self.cost_model = InferenceCostModel(
+        initial_costs = InferenceCostModel(
             predicted_base_latency_s, predicted_per_item_latency_s
+        )
+        if (
+            not isinstance(max_batch_size, int)
+            or isinstance(max_batch_size, bool)
+            or max_batch_size <= 0
+        ):
+            raise ValueError("max_batch_size must be positive")
+        self._batch_latency_s = [
+            initial_costs.estimate(size) for size in range(1, max_batch_size + 1)
+        ]
+        self.cost_model = InferenceCostModel(
+            predicted_base_latency_s,
+            predicted_per_item_latency_s,
+            tuple(self._batch_latency_s),
         )
         if not math.isfinite(cost_update_alpha) or not 0 < cost_update_alpha <= 1:
             raise ValueError("cost_update_alpha must be in (0, 1]")
@@ -92,13 +107,15 @@ class LeRobotPolicyBackend:
         observations = tuple(observations)
         if not observations:
             raise ValueError("cannot infer an empty batch")
+        if len(observations) > len(self._batch_latency_s):
+            raise ValueError("inference batch exceeds configured max_batch_size")
+        wall_start_s = time.perf_counter()
         payloads = []
         for observation in observations:
             if not isinstance(observation.payload, Mapping):
                 raise TypeError("LeRobot observation payloads must be mappings")
             payloads.append(dict(observation.payload))
         batch = self.preprocessor(_collate(payloads))
-        wall_start_s = time.perf_counter()
         try:
             import torch
         except ImportError as error:
@@ -113,16 +130,6 @@ class LeRobotPolicyBackend:
             except Exception:
                 self.reset()
                 raise
-        latency_s = time.perf_counter() - wall_start_s
-        observed_per_item_s = max(
-            0.0,
-            (latency_s - self.cost_model.base_latency_s) / len(observations),
-        )
-        self.cost_model = InferenceCostModel(
-            self.cost_model.base_latency_s,
-            (1 - self.cost_update_alpha) * self.cost_model.per_item_latency_s
-            + self.cost_update_alpha * observed_per_item_s,
-        )
         if getattr(action_batch, "ndim", None) != 3:
             raise ValueError(
                 "predict_action_chunk must return [batch, horizon, action_dim]"
@@ -133,7 +140,7 @@ class LeRobotPolicyBackend:
         execution_horizon = self.execution_horizon or output_horizon
         if execution_horizon > output_horizon:
             raise ValueError("execution horizon exceeds the policy output horizon")
-        chunks = []
+        actions_by_observation = []
         for batch_index, observation in enumerate(observations):
             actions = []
             for action_index in range(execution_horizon):
@@ -141,12 +148,26 @@ class LeRobotPolicyBackend:
                     action_batch[batch_index : batch_index + 1, action_index]
                 )
                 actions.append(_to_python(processed_action))
+            actions_by_observation.append(tuple(actions))
+        latency_s = time.perf_counter() - wall_start_s
+        batch_index = len(observations) - 1
+        previous_latency_s = self._batch_latency_s[batch_index]
+        self._batch_latency_s[batch_index] = (
+            1 - self.cost_update_alpha
+        ) * previous_latency_s + self.cost_update_alpha * latency_s
+        self.cost_model = InferenceCostModel(
+            self.cost_model.base_latency_s,
+            self.cost_model.per_item_latency_s,
+            tuple(self._batch_latency_s),
+        )
+        chunks = []
+        for observation, actions in zip(observations, actions_by_observation):
             chunks.append(
                 ActionChunk(
                     session_id=observation.session_id,
                     observation_sequence=observation.sequence,
                     generation=observation.generation,
-                    actions=tuple(actions),
+                    actions=actions,
                     produced_at_s=started_at_s + latency_s,
                     auxiliary={
                         "policy_type": type(self.policy).__name__,

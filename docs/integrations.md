@@ -144,7 +144,8 @@ software versions, accelerator identity, and a SHA-256 checksum. It intentionall
 does not offer deterministic replay for a wall-clock GPU/simulator run. Omitting
 `--execution-horizon` preserves the model's configured `n_action_steps`; an
 override is recorded and should be treated as an experiment variable when task
-quality is compared.
+quality is compared. The artifact also records the scheduler, inference, and
+endpoint timeout values that govern fallback and reset behavior.
 
 Verify the schema, result checksum, exact FleetVLA source identity, and any
 embedded local-scheduler source hash without rerunning physics or executing code:

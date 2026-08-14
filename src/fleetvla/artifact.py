@@ -1142,10 +1142,16 @@ def _validate_system_artifact(artifact: dict[str, Any]) -> set[str]:
         raise ValueError("model_revision must be a string or null")
     if not isinstance(config["scheduler_config"], dict):
         raise ValueError("scheduler_config must be an object")
-    if "scheduler_timeout_s" in config:
+    for timeout_field in (
+        "scheduler_timeout_s",
+        "inference_timeout_s",
+        "endpoint_timeout_s",
+    ):
+        if timeout_field not in config:
+            continue
         _finite_number(
-            config["scheduler_timeout_s"],
-            "scheduler_timeout_s",
+            config[timeout_field],
+            timeout_field,
             minimum=0,
             strict=True,
         )

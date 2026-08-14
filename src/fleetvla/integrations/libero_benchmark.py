@@ -81,7 +81,10 @@ def run_smolvla_libero(
         ) from error
 
     backend = LeRobotPolicyBackend.from_smolvla_pretrained(
-        model_id, revision=revision, execution_horizon=execution_horizon
+        model_id,
+        revision=revision,
+        execution_horizon=execution_horizon,
+        max_batch_size=max_batch_size,
     )
     adapters: list[LiberoVectorAdapter] = []
     environments = []
@@ -141,14 +144,17 @@ def run_smolvla_libero(
         raise
 
     endpoints = [adapter.endpoints[0] for adapter in adapters]
+    inference_timeout_s = max(10.0, duration_s)
+    endpoint_timeout_s = 0.1
     try:
         engine = AsyncServingEngine(
             endpoints,
             backend,
             scheduler,
             max_batch_size=max_batch_size,
-            inference_timeout_s=max(10.0, duration_s),
+            inference_timeout_s=inference_timeout_s,
             scheduler_timeout_s=scheduler_timeout_s,
+            endpoint_timeout_s=endpoint_timeout_s,
             action_execution=action_execution,
         )
     except Exception:
@@ -196,6 +202,8 @@ def run_smolvla_libero(
             "scheduler": scheduler_name,
             "scheduler_config": scheduler_config,
             "scheduler_timeout_s": scheduler_timeout_s,
+            "inference_timeout_s": inference_timeout_s,
+            "endpoint_timeout_s": endpoint_timeout_s,
             "duration_s": duration_s,
             "max_batch_size": max_batch_size,
             "control_hz": control_hz,

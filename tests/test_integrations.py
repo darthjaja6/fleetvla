@@ -368,6 +368,43 @@ def test_lerobot_policy_backend_updates_its_cost_from_measured_latency(
     assert backend.cost_model.estimate(2) == 2.0
 
 
+def test_lerobot_policy_backend_retains_latency_for_each_batch_size(
+    monkeypatch,
+) -> None:
+    torch = pytest.importorskip("torch")
+    times = iter((0.0, 0.4, 1.0, 1.4))
+    monkeypatch.setattr(
+        "fleetvla.integrations.lerobot.time.perf_counter", lambda: next(times)
+    )
+
+    class Policy:
+        def reset(self):
+            pass
+
+        def predict_action_chunk(self, batch):
+            return torch.ones((batch["state"].shape[0], 1, 1))
+
+    backend = LeRobotPolicyBackend(
+        Policy(),
+        predicted_base_latency_s=0.05,
+        predicted_per_item_latency_s=0,
+        cost_update_alpha=1,
+        max_batch_size=4,
+    )
+
+    def observations(count):
+        return tuple(
+            Observation(str(index), 0, 0, 0, {"state": torch.zeros((1, 1))})
+            for index in range(count)
+        )
+
+    backend.infer(observations(4), 0)
+    backend.infer(observations(2), 1)
+
+    assert backend.cost_model.estimate(2) == pytest.approx(0.4)
+    assert backend.cost_model.estimate(4) == pytest.approx(0.4)
+
+
 def test_lerobot_policy_backend_separates_output_and_execution_horizons() -> None:
     torch = pytest.importorskip("torch")
 

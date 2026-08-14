@@ -138,6 +138,10 @@ responsibilities: a scheduler never constructs or accepts chunks.
 (`base_latency_s + per_item_latency_s * batch_size`) or a measured latency value
 for every supported batch size. The Armory-compatible workload uses the paper's
 published L40S profile rather than fitting it to a line.
+Call `costs.estimate(batch_size)` to obtain the predicted inference seconds for
+a proposed positive batch size. Live LeRobot serving exposes a per-batch table
+seeded from its linear prior and updates only the observed batch size with
+end-to-end preprocessing, policy, and postprocessing time.
 
 Built-ins live in `fleetvla/schedulers/` and are registered explicitly in that
 package's `__init__.py`: FIFO, round robin, earliest deadline first, adaptive

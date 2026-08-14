@@ -20,7 +20,12 @@ class SchedulerConformanceError(ValueError):
     """A scheduler does not satisfy the public decision contract."""
 
 
-def _snapshot(session_ids: tuple[str, ...], *, now_s: float = 0.1) -> FleetSnapshot:
+def _snapshot(
+    session_ids: tuple[str, ...],
+    *,
+    now_s: float = 0.1,
+    action_execution: str = "sequential-buffer",
+) -> FleetSnapshot:
     sessions = tuple(
         SessionSnapshot(
             session_id=session_id,
@@ -34,10 +39,14 @@ def _snapshot(session_ids: tuple[str, ...], *, now_s: float = 0.1) -> FleetSnaps
             network_latency_s=0.005,
             connected=True,
             in_flight_sequence=None,
+            chunk_size=index + 1,
+            service_weight=2.0 if index == 0 else 1.0,
         )
         for index, session_id in enumerate(session_ids)
     )
-    return FleetSnapshot(now_s, sessions, max_batch_size=2)
+    return FleetSnapshot(
+        now_s, sessions, max_batch_size=2, action_execution=action_execution
+    )
 
 
 def _mixed_snapshot() -> FleetSnapshot:
@@ -124,10 +133,14 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
 
     fleets = (
         _snapshot(("arm-a", "arm-b", "arm-c")),
-        _snapshot(("robot-x", "robot-y"), now_s=0.12),
+        _snapshot(
+            ("robot-x", "robot-y"),
+            now_s=0.12,
+            action_execution="latest-indexed",
+        ),
         _mixed_snapshot(),
     )
-    costs = InferenceCostModel(0.02, 0.005)
+    costs = InferenceCostModel(0, 0, (0.025, 0.04))
     first = factory()
     repeated = factory()
     for fleet in fleets:

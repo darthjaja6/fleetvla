@@ -68,6 +68,20 @@ def test_conformance_accepts_future_dispatch_deferral() -> None:
     assert len(check_scheduler(Deferred)) == 9
 
 
+def test_conformance_exercises_both_action_execution_policies() -> None:
+    class SequentialOnly:
+        def schedule(self, fleet, costs):
+            del costs
+            if fleet.action_execution != "sequential-buffer":
+                raise RuntimeError("latest-indexed is unsupported")
+            if not fleet.ready_sessions:
+                return ScheduleDecision((), "no work")
+            return ScheduleDecision((fleet.ready_sessions[0].session_id,))
+
+    with pytest.raises(RuntimeError, match="latest-indexed"):
+        check_scheduler(SequentialOnly)
+
+
 def test_conformance_rejects_non_future_dispatch_deferral() -> None:
     class InvalidDeferred:
         def schedule(self, fleet, costs):
