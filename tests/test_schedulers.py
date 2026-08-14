@@ -1,5 +1,6 @@
 import json
 import time
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -55,6 +56,10 @@ def test_all_registered_schedulers_pass_public_conformance() -> None:
     )
     for name in registry.names():
         assert len(check_scheduler(lambda name=name: create_scheduler(name))) == 9
+
+
+def test_installed_package_declares_inline_types() -> None:
+    assert files("fleetvla").joinpath("py.typed").is_file()
 
 
 def test_conformance_accepts_future_dispatch_deferral() -> None:

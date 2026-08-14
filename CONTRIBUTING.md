@@ -4,12 +4,13 @@ FleetVLA welcomes scheduling algorithms, workload definitions, and focused
 backend or endpoint adapters. Start by running the CPU path:
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e '.[dev]'
-python -m ruff check .
-python -m pytest
-fleetvla demo
+python3 -m venv .venv && \
+  . .venv/bin/activate && \
+  python -m pip install -e '.[dev]' && \
+  python -m ruff check . && \
+  python -m mypy --strict examples/my_scheduler.py && \
+  python -m pytest && \
+  fleetvla demo
 ```
 
 The `dev` extra matches the default CPU CI job, including NumPy-backed adapter

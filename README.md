@@ -19,10 +19,10 @@ platform-specific.
 FleetVLA has no runtime dependencies. With Python 3.10 or newer:
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install -e .
-fleetvla demo
+python3 -m venv .venv && \
+  . .venv/bin/activate && \
+  python -m pip install -e . && \
+  fleetvla demo
 ```
 
 The demo advances virtual time rather than sleeping, so it is deterministic and

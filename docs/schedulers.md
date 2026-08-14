@@ -21,7 +21,10 @@ from fleetvla import FleetSnapshot, InferenceCostModel, ScheduleDecision
 
 
 class SmallestBufferFirst:
-    def schedule(self, fleet: FleetSnapshot, costs: InferenceCostModel):
+    def schedule(
+        self, fleet: FleetSnapshot, costs: InferenceCostModel
+    ) -> ScheduleDecision:
+        del costs
         ready = sorted(
             fleet.ready_sessions,
             key=lambda session: (session.buffer_horizon_s, session.session_id),

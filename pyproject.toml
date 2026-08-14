@@ -19,12 +19,12 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/fleetvla/fleetvla"
-Documentation = "https://github.com/fleetvla/fleetvla#readme"
-Issues = "https://github.com/fleetvla/fleetvla/issues"
+Homepage = "https://github.com/darthjaja6/fleetvla"
+Documentation = "https://github.com/darthjaja6/fleetvla#readme"
+Issues = "https://github.com/darthjaja6/fleetvla/issues"
 
 [project.optional-dependencies]
-dev = ["numpy>=1.26", "pytest>=8", "ruff>=0.12"]
+dev = ["mypy>=1.17", "numpy>=1.26", "pytest>=8", "ruff>=0.12"]
 smolvla = [
   "lerobot[smolvla] @ git+https://github.com/huggingface/lerobot.git@a16f34c085c9597fcbdb9fde395a3334d78df716 ; python_version >= '3.12'",
 ]
