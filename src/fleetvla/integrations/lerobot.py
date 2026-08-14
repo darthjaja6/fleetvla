@@ -81,8 +81,12 @@ class LeRobotPolicyBackend:
         **backend_kwargs: Any,
     ) -> "LeRobotPolicyBackend":
         try:
-            from lerobot.policies import make_pre_post_processors
-            from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
+            from lerobot.policies import (  # type: ignore[import-not-found]
+                make_pre_post_processors,
+            )
+            from lerobot.policies.smolvla.modeling_smolvla import (  # type: ignore[import-not-found]
+                SmolVLAPolicy,
+            )
         except ImportError as error:
             raise ImportError(
                 "SmolVLA support requires Python 3.12+ and "
@@ -140,15 +144,15 @@ class LeRobotPolicyBackend:
         execution_horizon = self.execution_horizon or output_horizon
         if execution_horizon > output_horizon:
             raise ValueError("execution horizon exceeds the policy output horizon")
-        actions_by_observation = []
+        actions_by_observation: list[tuple[Any, ...]] = []
         for batch_index, observation in enumerate(observations):
-            actions = []
+            action_values: list[Any] = []
             for action_index in range(execution_horizon):
                 processed_action = self.postprocessor(
                     action_batch[batch_index : batch_index + 1, action_index]
                 )
-                actions.append(_to_python(processed_action))
-            actions_by_observation.append(tuple(actions))
+                action_values.append(_to_python(processed_action))
+            actions_by_observation.append(tuple(action_values))
         latency_s = time.perf_counter() - wall_start_s
         batch_index = len(observations) - 1
         previous_latency_s = self._batch_latency_s[batch_index]
@@ -160,14 +164,14 @@ class LeRobotPolicyBackend:
             self.cost_model.per_item_latency_s,
             tuple(self._batch_latency_s),
         )
-        chunks = []
-        for observation, actions in zip(observations, actions_by_observation):
+        chunks: list[ActionChunk] = []
+        for observation, chunk_actions in zip(observations, actions_by_observation):
             chunks.append(
                 ActionChunk(
                     session_id=observation.session_id,
                     observation_sequence=observation.sequence,
                     generation=observation.generation,
-                    actions=actions,
+                    actions=chunk_actions,
                     produced_at_s=started_at_s + latency_s,
                     auxiliary={
                         "policy_type": type(self.policy).__name__,

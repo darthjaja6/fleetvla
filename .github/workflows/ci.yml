@@ -17,7 +17,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e '.[dev]' numpy
       - run: python -m ruff check .
-      - run: python -m mypy --strict examples/my_scheduler.py
+      - run: python -m mypy --strict src/fleetvla examples/my_scheduler.py
       - run: python -m pytest
       - run: fleetvla demo --duration 0.5
 

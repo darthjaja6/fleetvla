@@ -188,11 +188,11 @@ class FleetSimulator:
                 self._push(self.clock.now() + delay_s, "deliver", chunk)
             return
         if kind == "deliver":
-            chunk: ActionChunk = payload
-            accepted = self.runtime.accept(chunk)
+            delivered_chunk: ActionChunk = payload
+            accepted = self.runtime.accept(delivered_chunk)
             commit_chunk = getattr(self.backend, "commit_chunk", None)
             if commit_chunk is not None:
-                commit_chunk(chunk, accepted)
+                commit_chunk(delivered_chunk, accepted)
             return
         if kind == "dispatch_wakeup":
             if payload == self._dispatch_wakeup_s:

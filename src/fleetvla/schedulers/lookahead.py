@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from ..types import (
@@ -159,12 +160,12 @@ def _best_prefix_batch(
     # Values are (reward, prefix counts). Lexicographic count tie-breaking
     # preserves the order of _bounded_compositions and the pinned Armory fixture.
     states: dict[int, tuple[float, tuple[int, ...]]] = {0: (0.0, ())}
-    for tier, rewards in zip(tiers, prefix_rewards):
+    for tier, prefix in zip(tiers, prefix_rewards):
         next_states: dict[int, tuple[float, tuple[int, ...]]] = {}
         for used, (reward, counts) in states.items():
             for count in range(min(len(tier), size - used) + 1):
                 selected = used + count
-                candidate = (reward + rewards[count], counts + (count,))
+                candidate = (reward + prefix[count], counts + (count,))
                 current = next_states.get(selected)
                 if (
                     current is None
@@ -182,7 +183,9 @@ def _best_prefix_batch(
     )
 
 
-def _bounded_compositions(total: int, capacities: tuple[int, ...]):
+def _bounded_compositions(
+    total: int, capacities: tuple[int, ...]
+) -> Iterator[tuple[int, ...]]:
     if len(capacities) == 1:
         if total <= capacities[0]:
             yield (total,)

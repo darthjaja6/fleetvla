@@ -10,11 +10,12 @@ import math
 import platform
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from ..benchmark import _captured_scheduler, fleetvla_source_sha256
 from ..runtime import ACTION_EXECUTION_POLICIES
 from ..serving import AsyncServingEngine, serving_metrics
+from ..trace import Event
 from ..types import SessionConfig
 from .lerobot import LeRobotPolicyBackend
 from .libero import LiberoVectorAdapter
@@ -63,12 +64,12 @@ def run_smolvla_libero(
     try:
         import numpy as np
         import torch
-        from lerobot.envs import (
+        from lerobot.envs import (  # type: ignore[import-not-found]
             make_env,
             make_env_pre_post_processors,
             preprocess_observation,
         )
-        from lerobot.envs.configs import LiberoEnv
+        from lerobot.envs.configs import LiberoEnv  # type: ignore[import-not-found]
     except ImportError as error:
         raise ImportError(
             "LIBERO system benchmarks require Python 3.12+ and the "
@@ -109,9 +110,13 @@ def run_smolvla_libero(
             ) -> dict[str, Any]:
                 payload = preprocess_observation(observation)
                 payload["task"] = task
-                return env_preprocessor(payload)
+                return cast(dict[str, Any], env_preprocessor(payload))
 
             action_dim = int(environment.single_action_space.shape[-1])
+
+            def fallback_action(action_dim: int = action_dim) -> Any:
+                return np.zeros(action_dim, dtype=np.float32)
+
             adapter = LiberoVectorAdapter(
                 environment,
                 [
@@ -126,9 +131,7 @@ def run_smolvla_libero(
                 ],
                 observation_converter=convert,
                 action_converter=lambda action: action,
-                fallback_action=lambda action_dim=action_dim: np.zeros(
-                    action_dim, dtype=np.float32
-                ),
+                fallback_action=fallback_action,
                 addressing="single",
                 reset_kwargs={"seed": seed + task_id},
                 max_episode_steps=episode_length,
@@ -156,7 +159,7 @@ def run_smolvla_libero(
         _close_environments(environments)
         raise
 
-    async def run_and_close() -> tuple:
+    async def run_and_close() -> tuple[Event, ...]:
         try:
             return await engine.run(duration_s)
         finally:

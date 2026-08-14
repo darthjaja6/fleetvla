@@ -10,6 +10,7 @@ import sys
 from collections import Counter
 from dataclasses import replace
 from pathlib import Path
+from typing import Any, cast
 
 from .benchmark import (
     default_config,
@@ -161,11 +162,11 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _scheduler_config(value: str) -> dict:
+def _scheduler_config(value: str) -> dict[str, Any]:
     parsed = json.loads(value)
     if not isinstance(parsed, dict):
         raise ValueError("scheduler config must be a JSON object")
-    return parsed
+    return cast(dict[str, Any], parsed)
 
 
 def _benchmark(args: argparse.Namespace) -> int:
@@ -180,7 +181,7 @@ def _benchmark(args: argparse.Namespace) -> int:
         base = load_config(args.config_path) if args.config_path else default_config()
         if not scheduler_names:
             scheduler_names = [base.scheduler]
-    overrides = {}
+    overrides: dict[str, Any] = {}
     if args.scheduler_config is not None:
         overrides["scheduler_config"] = _scheduler_config(args.scheduler_config)
     if args.environment is not None:

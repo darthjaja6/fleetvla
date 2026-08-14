@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .endpoints import ObservationUnavailable, validate_observation
 from .types import ActionCommand, FieldSpec, SessionConfig
@@ -417,10 +417,10 @@ class JsonlSocketTransport:
             or message.get("status") not in {"accepted", "executed", "rejected"}
         ):
             raise ValueError("invalid remote action acknowledgement")
-        key = integers
+        key = cast(tuple[int, int, int], integers)
         with self._state_changed:
             previous = self._pending_actions.get(key)
-            status = message["status"]
+            status = cast(str, message["status"])
             allowed = {
                 "sent": {"accepted", "rejected"},
                 "accepted": {"executed", "rejected"},

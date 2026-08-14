@@ -83,7 +83,7 @@ def test_conformance_exercises_both_action_execution_policies() -> None:
                 return ScheduleDecision((), "no work")
             return ScheduleDecision((fleet.ready_sessions[0].session_id,))
 
-    with pytest.raises(RuntimeError, match="latest-indexed"):
+    with pytest.raises(ValueError, match="latest-indexed"):
         check_scheduler(SequentialOnly)
 
 
@@ -368,7 +368,22 @@ def test_conformance_cli_reports_contract_error_without_traceback(
 
     assert main(["test-scheduler", f"{path}:Invalid"]) == 2
     error = capsys.readouterr().err
-    assert error == "error: scheduler must return a ScheduleDecision\n"
+    assert error == (
+        "error: three-session sequential fixture: "
+        "scheduler must return a ScheduleDecision\n"
+    )
+
+
+def test_conformance_reports_empty_fleet_context() -> None:
+    class MissingEmptyCase:
+        def schedule(self, fleet, costs):
+            cost = costs.estimate(min(len(fleet.ready_sessions), 8))
+            return ScheduleDecision(
+                (fleet.ready_sessions[0].session_id,), f"cost={cost}"
+            )
+
+    with pytest.raises(ValueError, match="empty-fleet fixture: batch_size"):
+        check_scheduler(MissingEmptyCase)
 
 
 def test_conformance_rejects_hard_coded_fixture_session() -> None:

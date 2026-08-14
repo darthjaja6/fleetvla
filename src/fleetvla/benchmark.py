@@ -11,7 +11,7 @@ import tempfile
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable, Iterator
+from typing import Any, Iterable, Iterator, cast
 
 from .backend import SyntheticBackend
 from .runtime import ACTION_EXECUTION_POLICIES
@@ -171,10 +171,10 @@ def default_config() -> BenchmarkConfig:
 
 
 def _finite_time(value: Any) -> float:
-    value = float(value)
-    if not math.isfinite(value) or value < 0:
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
         raise ValueError("observation times must be finite and non-negative")
-    return value
+    return number
 
 
 def load_config(path: str | Path) -> BenchmarkConfig:
@@ -383,7 +383,7 @@ def compute_metrics(
 def _event_dict(event: Event) -> dict[str, Any]:
     # Normalize tuples and other JSON-compatible containers exactly as they are
     # persisted so an in-memory replay compares against the stored artifact.
-    return json.loads(json.dumps(event.as_dict()))
+    return cast(dict[str, Any], json.loads(json.dumps(event.as_dict())))
 
 
 def artifact_dict(run: BenchmarkRun) -> dict[str, Any]:

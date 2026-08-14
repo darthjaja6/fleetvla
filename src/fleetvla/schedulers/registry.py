@@ -6,16 +6,16 @@ import importlib.util
 import types
 from dataclasses import fields
 from pathlib import Path
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, Union, cast, get_args, get_origin, get_type_hints
 
 from .base import Scheduler
 
 
 class SchedulerRegistry:
     def __init__(self) -> None:
-        self._classes: dict[str, type] = {}
+        self._classes: dict[str, type[Any]] = {}
 
-    def register(self, name: str, scheduler_class: type) -> None:
+    def register(self, name: str, scheduler_class: type[Any]) -> None:
         if not name or name in self._classes:
             raise ValueError(f"invalid or duplicate scheduler name: {name!r}")
         self._classes[name] = scheduler_class
@@ -41,7 +41,7 @@ class SchedulerRegistry:
             raise TypeError(f"scheduler has no schedule method: {specification}")
         config_type = getattr(scheduler_class, "config_type", None)
         if config_type is None:
-            return scheduler_class(**config)
+            return cast(Scheduler, scheduler_class(**config))
         known = {field.name for field in fields(config_type)}
         unknown = set(config) - known
         if unknown:
@@ -53,10 +53,10 @@ class SchedulerRegistry:
             name: _validate_value(name, value, hints[name])
             for name, value in config.items()
         }
-        return scheduler_class(config_type(**validated))
+        return cast(Scheduler, scheduler_class(config_type(**validated)))
 
     @staticmethod
-    def _load_local(specification: str) -> type:
+    def _load_local(specification: str) -> type[Any]:
         filename, class_name = specification.rsplit(":", 1)
         path = Path(filename).expanduser().resolve()
         if not path.is_file():
@@ -69,7 +69,7 @@ class SchedulerRegistry:
         module = importlib.util.module_from_spec(module_spec)
         module_spec.loader.exec_module(module)
         try:
-            return getattr(module, class_name)
+            return cast(type[Any], getattr(module, class_name))
         except AttributeError as error:
             raise ValueError(
                 f"scheduler class {class_name!r} not found in {path}"

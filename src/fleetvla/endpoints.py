@@ -6,7 +6,7 @@ import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from threading import Lock
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .types import FieldSpec, SessionConfig
 
@@ -96,7 +96,7 @@ class LeRobotRobotEndpoint:
     def observe(self) -> Mapping[str, Any]:
         if self._closed:
             raise RuntimeError("endpoint is closed")
-        observation = self.robot.get_observation()
+        observation = cast(Mapping[str, Any], self.robot.get_observation())
         validate_observation(observation, self.observation_schema)
         return observation
 

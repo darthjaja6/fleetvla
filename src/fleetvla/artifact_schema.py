@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, cast
 
 
 def _is_sha256(value: Any) -> bool:
@@ -383,7 +383,7 @@ def _require_exact_keys(values: dict[str, Any], *keys: str) -> None:
 
 def _positive_integer_value(value: Any, name: str) -> int:
     _positive_integer(value, name)
-    return value
+    return cast(int, value)
 
 
 def _error_string(value: Any) -> None:

@@ -7,6 +7,7 @@ import itertools
 import queue
 import threading
 from dataclasses import dataclass
+from typing import cast
 
 from .schedulers.base import Scheduler
 from .types import FleetSnapshot, InferenceCostModel, ScheduleDecision
@@ -92,7 +93,9 @@ class SchedulerRunner:
             request = self._requests.get()
             if request is _STOP:
                 return
-            request_id, fleet, costs = request
+            request_id, fleet, costs = cast(
+                tuple[int, FleetSnapshot, InferenceCostModel], request
+            )
             try:
                 response: object = self._scheduler.schedule(fleet, costs)
             except BaseException as error:

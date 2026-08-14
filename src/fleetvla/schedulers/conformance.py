@@ -132,6 +132,19 @@ def _validate_decision(decision: object, fleet: FleetSnapshot) -> ScheduleDecisi
     return decision
 
 
+def _schedule_checked(
+    scheduler: Scheduler,
+    fleet: FleetSnapshot,
+    costs: InferenceCostModel,
+    fixture: str,
+) -> ScheduleDecision:
+    try:
+        decision = scheduler.schedule(fleet, costs)
+        return _validate_decision(decision, fleet)
+    except Exception as error:
+        raise SchedulerConformanceError(f"{fixture}: {error}") from error
+
+
 async def _check_wall_clock(
     scheduler: Scheduler, fleet: FleetSnapshot, costs: InferenceCostModel
 ) -> None:
@@ -153,15 +166,18 @@ async def _check_wall_clock(
 def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
     """Return passed contract checks or raise with the failing requirement."""
 
-    fleets = (
-        _snapshot(("arm-a", "arm-b", "arm-c")),
-        _snapshot(
-            ("robot-x", "robot-y"),
-            now_s=0.12,
-            action_execution="latest-indexed",
+    fixtures = (
+        ("three-session sequential fixture", _snapshot(("arm-a", "arm-b", "arm-c"))),
+        (
+            "changed ready-set latest-indexed fixture",
+            _snapshot(
+                ("robot-x", "robot-y"),
+                now_s=0.12,
+                action_execution="latest-indexed",
+            ),
         ),
-        _mixed_snapshot(),
-        _priority_stress_snapshot(),
+        ("mixed lifecycle fixture", _mixed_snapshot()),
+        ("20-tier serving-budget fixture", _priority_stress_snapshot()),
     )
     costs = InferenceCostModel(
         0,
@@ -170,20 +186,35 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
     )
     first = factory()
     repeated = factory()
-    for fleet in fleets:
-        decision = _validate_decision(first.schedule(fleet, costs), fleet)
-        repeated_decision = _validate_decision(repeated.schedule(fleet, costs), fleet)
+    for fixture, fleet in fixtures:
+        decision = _schedule_checked(first, fleet, costs, fixture)
+        repeated_decision = _schedule_checked(repeated, fleet, costs, fixture)
         if repeated_decision != decision:
             raise SchedulerConformanceError(
-                "scheduler instances are not deterministic across sequential calls"
+                f"{fixture}: scheduler instances are not deterministic "
+                "across sequential calls"
             )
-    empty = FleetSnapshot(fleets[0].now_s, (), fleets[0].max_batch_size)
-    empty_decision = factory().schedule(empty, costs)
+    reference = fixtures[0][1]
+    empty = FleetSnapshot(reference.now_s, (), reference.max_batch_size)
+    try:
+        empty_decision = factory().schedule(empty, costs)
+    except Exception as error:
+        raise SchedulerConformanceError(f"empty-fleet fixture: {error}") from error
+    if not isinstance(empty_decision, ScheduleDecision):
+        raise SchedulerConformanceError(
+            "empty-fleet fixture: scheduler must return a ScheduleDecision"
+        )
     if empty_decision.session_ids or empty_decision.defer_until_s is not None:
         raise SchedulerConformanceError(
-            "scheduler selected or deferred work from an empty fleet"
+            "empty-fleet fixture: scheduler selected or deferred work "
+            "from an empty fleet"
         )
-    asyncio.run(_check_wall_clock(factory(), fleets[-1], costs))
+    try:
+        asyncio.run(_check_wall_clock(factory(), fixtures[-1][1], costs))
+    except SchedulerConformanceError as error:
+        raise SchedulerConformanceError(
+            f"20-tier serving-budget fixture: {error}"
+        ) from error
     return (
         "selection or future deferral for ready work",
         "ScheduleDecision return type",

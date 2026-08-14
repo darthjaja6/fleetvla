@@ -8,7 +8,7 @@ python3 -m venv .venv && \
   . .venv/bin/activate && \
   python -m pip install -e '.[dev]' && \
   python -m ruff check . && \
-  python -m mypy --strict examples/my_scheduler.py && \
+  python -m mypy --strict src/fleetvla examples/my_scheduler.py && \
   python -m pytest && \
   fleetvla demo
 ```

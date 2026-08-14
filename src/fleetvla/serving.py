@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import math
 import threading
-from typing import Any
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 from .backend import BackendResult
 from .clock import MonotonicClock
@@ -27,13 +28,17 @@ from .types import (
     ScheduleDecision,
 )
 
+if TYPE_CHECKING:
+    from .benchmark import BenchmarkMetrics
+    from .trace import Event
+
 
 class AsyncServingEngine:
     """Batch endpoint observations while control loops continue asynchronously."""
 
     def __init__(
         self,
-        endpoints: list[Endpoint],
+        endpoints: Sequence[Endpoint],
         backend: Any,
         scheduler: Scheduler,
         *,
@@ -103,7 +108,7 @@ class AsyncServingEngine:
             session_id: threading.Lock() for session_id in self.endpoints
         }
 
-    async def run(self, duration_s: float) -> tuple:
+    async def run(self, duration_s: float) -> tuple[Event, ...]:
         if not math.isfinite(duration_s) or duration_s <= 0:
             raise ValueError("duration_s must be positive")
         if self._running:
@@ -543,7 +548,9 @@ class AsyncServingEngine:
         if not set(decision.session_ids) <= ready:
             raise ValueError("scheduler selected a session that is not ready")
 
-    async def _infer(self, batch: tuple, backend_request: Any) -> None:
+    async def _infer(
+        self, batch: tuple[Observation, ...], backend_request: Any
+    ) -> None:
         started_at_s = self.clock.now()
         self.runtime.events.append(
             started_at_s, "inference_started", batch_size=len(batch)
@@ -692,7 +699,7 @@ class AsyncServingEngine:
             )
 
     def _handle_batch_failure(
-        self, batch: tuple, error: Exception, *, phase: str
+        self, batch: tuple[Observation, ...], error: Exception, *, phase: str
     ) -> None:
         self.runtime.events.append(
             self.clock.now(),
@@ -776,7 +783,9 @@ class AsyncServingEngine:
                     )
 
 
-def serving_metrics(events: tuple, endpoints: list[Endpoint], duration_s: float):
+def serving_metrics(
+    events: tuple[Event, ...], endpoints: Sequence[Endpoint], duration_s: float
+) -> BenchmarkMetrics:
     """Compute the same system metrics used by virtual-time benchmarks."""
 
     if not math.isfinite(duration_s) or duration_s <= 0:

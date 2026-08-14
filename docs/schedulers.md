@@ -70,10 +70,12 @@ call schedulers directly and therefore have no wall-clock timeout.
 
 The conformance command runs changing ready-set shapes plus a mixed snapshot of
 ready, idle, in-flight, and disconnected sessions through the same scheduler
-state. It repeats that sequence on a fresh instance and executes a 20-session,
+state. It also requires an empty fleet to return an empty, non-deferred decision.
+It repeats the non-empty sequence on a fresh instance and executes a 20-session,
 20-priority-tier, batch-size-eight decision through the wall-clock worker's 10 ms
-budget. This catches fixture-ID assumptions, selection from non-ready lifecycle
-states, non-deterministic state transitions, and plugins that would immediately
+budget. Failures name the active fixture. Together these checks catch fixture-ID
+assumptions, selection from non-ready lifecycle states, non-deterministic state
+transitions, missing empty-fleet handling, and plugins that would immediately
 fall back in serving.
 
 Then run it on the versioned batching workload, which exposes batch-size choices:
