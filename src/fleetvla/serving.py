@@ -196,9 +196,7 @@ class AsyncServingEngine:
         command = self.runtime.dequeue_action(session_id)
         if command is None:
             try:
-                outcome = await self._call_endpoint(
-                    session_id, endpoint.fallback
-                )
+                outcome = await self._call_endpoint(session_id, endpoint.fallback)
                 self.runtime.events.append(
                     self.clock.now(), "endpoint_fallback", session_id
                 )
@@ -588,9 +586,7 @@ class AsyncServingEngine:
         if reset_session is not None:
             reset_session(session_id)
         try:
-            await self._call_endpoint(
-                session_id, self.endpoints[session_id].close
-            )
+            await self._call_endpoint(session_id, self.endpoints[session_id].close)
         except Exception as error:
             self.runtime.events.append(
                 self.clock.now(),
@@ -605,14 +601,14 @@ class AsyncServingEngine:
         if reset_session is not None:
             reset_session(session_id)
 
-    def reconnect_session(self, session_id: str) -> None:
+    async def reconnect_session(self, session_id: str) -> None:
         endpoint = self.endpoints[session_id]
-        endpoint.reconnect()
+        await self._call_endpoint(session_id, endpoint.reconnect)
         self.runtime.reconnect(session_id)
         reset_session = getattr(self.backend, "reset_session", None)
         if reset_session is not None:
             reset_session(session_id)
-        self._observe(session_id)
+        await self._observe(session_id)
 
     def _handle_execution_outcome(
         self, session_id: str, outcome: ExecutionOutcome | None

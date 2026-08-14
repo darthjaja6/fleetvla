@@ -316,6 +316,30 @@ def test_endpoint_action_failure_disconnects_and_rejects_command() -> None:
     assert endpoint.closed
 
 
+def test_reconnect_waits_for_a_fresh_observation() -> None:
+    endpoint = FakeEndpoint("a")
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+    )
+
+    asyncio.run(engine._observe("a"))
+    original = engine.runtime.snapshot().sessions[0]
+    asyncio.run(engine._disconnect("a"))
+    assert endpoint.closed
+    assert not engine.runtime.snapshot().sessions[0].connected
+
+    asyncio.run(engine.reconnect_session("a"))
+
+    session = engine.runtime.snapshot().sessions[0]
+    assert session.connected
+    assert session.ready_sequence == 1
+    assert session.generation == original.generation + 1
+    assert endpoint.observations == 2
+    assert not endpoint.closed
+
+
 def test_remote_ack_timeout_does_not_block_healthy_session() -> None:
     blocked = CommandEndpoint("blocked", acknowledgement_delay_s=0.2)
     healthy = CommandEndpoint("healthy", acknowledgement_delay_s=0)
@@ -334,8 +358,7 @@ def test_remote_ack_timeout_does_not_block_healthy_session() -> None:
         for event in events
     )
     assert any(
-        event.kind == "action_rejected_endpoint"
-        and event.session_id == "blocked"
+        event.kind == "action_rejected_endpoint" and event.session_id == "blocked"
         for event in events
     )
     assert any(

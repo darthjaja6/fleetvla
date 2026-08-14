@@ -1,3 +1,4 @@
+import json
 import time
 from pathlib import Path
 
@@ -11,6 +12,10 @@ from fleetvla import (
 )
 from fleetvla.cli import main
 from fleetvla.schedulers import check_scheduler, create_scheduler, registry
+from fleetvla.schedulers.lookahead import (
+    _latest_indexed_steps,
+    _new_chunk_executed_time,
+)
 
 
 def _session(
@@ -162,6 +167,60 @@ def test_lookahead_models_latest_indexed_prefix_loss() -> None:
 
     assert sequential.session_ids == ("buffered",)
     assert latest.session_ids == ("empty",)
+
+
+def test_lookahead_matches_pinned_armory_l1_golden() -> None:
+    fixture_path = (
+        Path(__file__).parent / "fixtures" / "armory_lookahead_l1_golden.json"
+    )
+    fixture = json.loads(fixture_path.read_text())
+    scenario = fixture["scenario"]
+    sessions = tuple(
+        _session(
+            item["session_id"],
+            request_time_s=0,
+            buffer_horizon_s=item["buffer_steps"] / item["control_hz"],
+            chunk_size=item["chunk_size"],
+            service_weight=item["service_weight"],
+        )
+        for item in scenario["sessions"]
+    )
+    costs = InferenceCostModel(scenario["inference_latency_s"], 0)
+    fleet = FleetSnapshot(
+        0,
+        sessions,
+        scenario["max_batch_size"],
+        action_execution="latest-indexed",
+    )
+
+    scores = {}
+    for candidate in fixture["upstream_output"]["candidates"]:
+        session = next(
+            item for item in sessions if item.session_id == candidate["session_id"]
+        )
+        executed_s = _new_chunk_executed_time(
+            session,
+            selected=True,
+            inference_latency_s=scenario["inference_latency_s"],
+            horizon_s=scenario["evaluation_horizon_s"],
+            action_execution="latest-indexed",
+        )
+        skipped_steps, _ = _latest_indexed_steps(
+            session,
+            arrival_s=scenario["inference_latency_s"],
+            horizon_s=scenario["evaluation_horizon_s"],
+        )
+        assert skipped_steps == candidate["first_executed_index"]
+        assert executed_s == pytest.approx(candidate["executed_time_s"])
+        scores[session.session_id] = (
+            executed_s * session.service_weight / scenario["inference_latency_s"]
+        )
+        assert scores[session.session_id] == pytest.approx(candidate["objective"])
+
+    decision = create_scheduler(
+        "lookahead", {"batch_size_limit": scenario["max_batch_size"]}
+    ).schedule(fleet, costs)
+    assert decision.session_ids == tuple(fixture["upstream_output"]["selected_batch"])
 
 
 def test_measured_latency_profile_must_cover_requested_batch() -> None:

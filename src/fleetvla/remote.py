@@ -96,9 +96,7 @@ class RemoteEndpoint:
             "remote actions require command-aware execution by AsyncServingEngine"
         )
 
-    async def execute_command(
-        self, command: ActionCommand
-    ) -> RemoteActionReceipt:
+    async def execute_command(self, command: ActionCommand) -> RemoteActionReceipt:
         if self._closed:
             raise RuntimeError("endpoint is closed")
         if command.session_id != self.session_config.session_id:
@@ -171,9 +169,7 @@ class JsonlSocketTransport:
         self._latest: tuple[int, Mapping[str, Any]] | None = None
         self._last_sequence = -1
         self._error: str | None = None
-        self._pending_actions: dict[
-            tuple[int, int, int], tuple[str, bool]
-        ] = {}
+        self._pending_actions: dict[tuple[int, int, int], tuple[str, bool]] = {}
         self._closed = False
         self._reader_thread: threading.Thread | None = None
         try:
@@ -237,14 +233,10 @@ class JsonlSocketTransport:
                     if status == "executed":
                         return RemoteActionReceipt(accepted=True, executed=True)
                     if status == "rejected":
-                        return RemoteActionReceipt(
-                            accepted=accepted, executed=False
-                        )
+                        return RemoteActionReceipt(accepted=accepted, executed=False)
                     remaining_s = expires_at - time.monotonic()
                     if remaining_s <= 0:
-                        raise TimeoutError(
-                            "remote action acknowledgement timed out"
-                        )
+                        raise TimeoutError("remote action acknowledgement timed out")
                     self._state_changed.wait(remaining_s)
         finally:
             with self._state_changed:
@@ -369,8 +361,7 @@ class JsonlSocketTransport:
             or message.get("session_id") != self.session_id
             or set(message) != fields
             or any(type(value) is not int or value < 0 for value in integers)
-            or message.get("status")
-            not in {"accepted", "executed", "rejected"}
+            or message.get("status") not in {"accepted", "executed", "rejected"}
         ):
             raise ValueError("invalid remote action acknowledgement")
         key = integers

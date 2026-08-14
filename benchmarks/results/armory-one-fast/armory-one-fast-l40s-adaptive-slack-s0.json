@@ -120,7 +120,9 @@
     ],
     "scenario": "armory-one-fast-l40s",
     "scheduler": "adaptive-slack",
-    "scheduler_config": {},
+    "scheduler_config": {
+      "batch_size_limit": 5
+    },
     "seed": 0,
     "trace_source": null
   },
@@ -36525,12 +36527,12 @@
     "useful_actions": 1020
   },
   "provenance": {
-    "fleetvla_source_sha256": "bf0bfee6e501d038945097393cd94fd91adc9cc7dc31bb3779e2981b89b1a20c",
+    "fleetvla_source_sha256": "4aa0ccb4cab2350144aee70eeac1c92ab58c431bd9392253bbafd38cc15cd03a",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "edb278b44af612e346b2b01fdf6eb4d15d335b8e653775c5a6de596e2226060b"
+  "sha256": "a05da9e28b78b4abffcccffc1d15442d2a6d48cf5ffca01a09b280f9f8ea3e84"
 }

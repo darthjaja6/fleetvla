@@ -138,11 +138,26 @@ def _new_chunk_executed_time(
     chunk_s = session.chunk_size / session.control_hz
     arrival_s = inference_latency_s + session.network_latency_s
     if action_execution == "latest-indexed":
-        # The observation predicts from the next action index. Old buffered
-        # actions consumed before this chunk arrives therefore remove the same
-        # prefix from the returned chunk when it replaces that buffer.
-        skipped_prefix_s = min(buffered_s, arrival_s)
-        remaining_chunk_s = max(0.0, chunk_s - skipped_prefix_s)
-        return min(remaining_chunk_s, max(0.0, horizon_s - arrival_s))
+        _, executed_steps = _latest_indexed_steps(
+            session, arrival_s=arrival_s, horizon_s=horizon_s
+        )
+        return executed_steps / session.control_hz
     chunk_start_s = max(buffered_s, arrival_s)
     return min(chunk_s, max(0.0, horizon_s - chunk_start_s))
+
+
+def _latest_indexed_steps(
+    session: SessionSnapshot, *, arrival_s: float, horizon_s: float
+) -> tuple[int, int]:
+    """Return skipped and executable steps using Armory's tick transition."""
+
+    # A chunk arriving on a control tick can supply that tick, so only earlier
+    # buffered ticks remove indices from the returned chunk.
+    ticks_before_arrival = max(0, math.ceil(arrival_s * session.control_hz - 1e-12) - 1)
+    skipped_steps = min(session.buffer_steps, ticks_before_arrival)
+    available_steps = max(
+        0,
+        math.floor((horizon_s - arrival_s) * session.control_hz + 1e-12) + 1,
+    )
+    executed_steps = max(0, min(session.chunk_size - skipped_steps, available_steps))
+    return skipped_steps, executed_steps

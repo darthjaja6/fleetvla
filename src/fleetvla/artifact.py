@@ -1230,12 +1230,12 @@ def _validate_benchmark_metrics(metrics: Any, expected_sessions: set[str]) -> No
             raise ValueError("action delivery metrics must be provided together")
         for field in ("sent_actions", "accepted_actions"):
             _non_negative_integer(metrics[field], field)
-        if not metrics["useful_actions"] <= metrics["accepted_actions"] <= metrics[
-            "sent_actions"
-        ]:
-            raise ValueError(
-                "action delivery metrics must be monotonically decreasing"
-            )
+        if (
+            not metrics["useful_actions"]
+            <= metrics["accepted_actions"]
+            <= metrics["sent_actions"]
+        ):
+            raise ValueError("action delivery metrics must be monotonically decreasing")
     _unit_interval(metrics["starvation_frequency"], "starvation_frequency")
     _finite_number(metrics["starvation_duration_s"], "starvation_duration_s", minimum=0)
     for field in ("action_age_p50_s", "action_age_p95_s"):
@@ -1274,12 +1274,12 @@ def _validate_benchmark_metrics(metrics: Any, expected_sessions: set[str]) -> No
                     "session action delivery metrics must be provided together"
                 )
             for field in ("sent_actions", "accepted_actions"):
-                _non_negative_integer(
-                    session_metrics[field], f"session {field}"
-                )
-            if not session_metrics["actions"] <= session_metrics[
-                "accepted_actions"
-            ] <= session_metrics["sent_actions"]:
+                _non_negative_integer(session_metrics[field], f"session {field}")
+            if (
+                not session_metrics["actions"]
+                <= session_metrics["accepted_actions"]
+                <= session_metrics["sent_actions"]
+            ):
                 raise ValueError(
                     "session action delivery metrics must be monotonically decreasing"
                 )
