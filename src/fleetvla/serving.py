@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 from typing import Any
 
 from .backend import BackendResult
@@ -85,6 +86,9 @@ class AsyncServingEngine:
         self._quarantined_endpoint_tasks: set[asyncio.Task[Any]] = set()
         self._endpoint_locks = {
             session_id: asyncio.Lock() for session_id in self.endpoints
+        }
+        self._endpoint_thread_locks = {
+            session_id: threading.Lock() for session_id in self.endpoints
         }
 
     async def run(self, duration_s: float) -> tuple:
@@ -275,7 +279,9 @@ class AsyncServingEngine:
             async with self._endpoint_locks[session_id]:
                 if asyncio.iscoroutinefunction(method):
                     return await method(*args)
-                return await asyncio.to_thread(method, *args)
+                return await asyncio.to_thread(
+                    self._call_sync_endpoint, session_id, method, args
+                )
 
         operation = asyncio.create_task(invoke())
         try:
@@ -288,6 +294,12 @@ class AsyncServingEngine:
             # a later close/reconnect, while other sessions continue.
             self._quarantined_endpoint_tasks.add(operation)
             raise
+
+    def _call_sync_endpoint(
+        self, session_id: str, method: Any, args: tuple[Any, ...]
+    ) -> Any:
+        with self._endpoint_thread_locks[session_id]:
+            return method(*args)
 
     def _start_endpoint_task(
         self, session_id: str, operation: Any
@@ -317,7 +329,7 @@ class AsyncServingEngine:
                     pass
                 self._quarantined_endpoint_tasks.remove(task)
 
-    async def _drain_endpoint_tasks(self) -> None:
+    async def _drain_endpoint_tasks(self, *, include_quarantined: bool = False) -> None:
         tasks = tuple(self._endpoint_tasks.values()) + tuple(
             self._background_endpoint_tasks
         )
@@ -325,6 +337,11 @@ class AsyncServingEngine:
             await asyncio.gather(*tasks)
         self._endpoint_tasks.clear()
         self._background_endpoint_tasks.clear()
+        if include_quarantined and self._quarantined_endpoint_tasks:
+            await asyncio.gather(
+                *self._quarantined_endpoint_tasks, return_exceptions=True
+            )
+            self._quarantined_endpoint_tasks.clear()
 
     def _record_missed_ticks(self, session_id: str, count: int) -> None:
         self.runtime.events.append(
@@ -695,6 +712,16 @@ class AsyncServingEngine:
             await self._disconnect(session_id)
 
     def close(self) -> None:
+        """Close synchronous endpoints without overlapping timed-out callbacks.
+
+        Async applications should prefer :meth:`aclose`, which also drains
+        quarantined coroutine callbacks before closing endpoints.
+        """
+
+        if self._running:
+            raise RuntimeError("cannot close a serving engine while it is running")
+        if any(not task.done() for task in self._quarantined_endpoint_tasks):
+            raise RuntimeError("endpoint operations are pending; await engine.aclose()")
         if self._scheduler_runner is not None:
             self._scheduler_runner.close()
             self._scheduler_runner = None
@@ -706,7 +733,32 @@ class AsyncServingEngine:
             )
             if snapshot.connected:
                 self.runtime.disconnect(session_id)
-            endpoint.close()
+            self._call_sync_endpoint(session_id, endpoint.close, ())
+
+    async def aclose(self) -> None:
+        """Drain endpoint callbacks, then close every endpoint serially."""
+
+        if self._running:
+            raise RuntimeError("cannot close a serving engine while it is running")
+        await self._drain_endpoint_tasks(include_quarantined=True)
+        if self._scheduler_runner is not None:
+            self._scheduler_runner.close()
+            self._scheduler_runner = None
+        for session_id, endpoint in self.endpoints.items():
+            snapshot = next(
+                session
+                for session in self.runtime.snapshot().sessions
+                if session.session_id == session_id
+            )
+            if snapshot.connected:
+                self.runtime.disconnect(session_id)
+            async with self._endpoint_locks[session_id]:
+                if asyncio.iscoroutinefunction(endpoint.close):
+                    await endpoint.close()
+                else:
+                    await asyncio.to_thread(
+                        self._call_sync_endpoint, session_id, endpoint.close, ()
+                    )
 
 
 def serving_metrics(events: tuple, endpoints: list[Endpoint], duration_s: float):

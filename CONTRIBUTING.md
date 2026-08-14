@@ -12,6 +12,15 @@ python -m pytest
 fleetvla demo
 ```
 
+The `dev` extra matches the default CPU CI job, including NumPy-backed adapter
+tests. CI also runs the optional Torch integration tests on Python 3.12. To run
+that same job locally, install the CPU wheel and rerun the suite:
+
+```bash
+python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+python -m pytest
+```
+
 For a scheduler, first follow [the scheduler guide](docs/schedulers.md). A pull
 request should keep the scheduler independent of runtime and environment
 internals, pass `fleetvla test-scheduler`, and attach or describe a reproducible

@@ -71,6 +71,25 @@ class SlowEndpoint(FakeEndpoint):
         super().fallback()
 
 
+class ShutdownProbeEndpoint(FakeEndpoint):
+    def __init__(self, session_id: str) -> None:
+        super().__init__(session_id)
+        self.operation_active = False
+        self.close_overlapped = False
+
+    def execute(self, action):
+        self.operation_active = True
+        try:
+            time.sleep(0.06)
+            super().execute(action)
+        finally:
+            self.operation_active = False
+
+    def close(self):
+        self.close_overlapped = self.operation_active
+        super().close()
+
+
 class BlockingScheduler(FIFOScheduler):
     def schedule(self, fleet, costs):
         time.sleep(0.2)
@@ -86,6 +105,24 @@ class CommandEndpoint(FakeEndpoint):
         await asyncio.sleep(self.acknowledgement_delay_s)
         self.actions.append(command.value)
         return RemoteActionReceipt(accepted=True, executed=True)
+
+
+class AsyncShutdownProbeEndpoint(CommandEndpoint):
+    def __init__(self, session_id: str) -> None:
+        super().__init__(session_id, acknowledgement_delay_s=0.05)
+        self.operation_active = False
+        self.close_overlapped = False
+
+    async def execute_command(self, command):
+        self.operation_active = True
+        try:
+            return await super().execute_command(command)
+        finally:
+            self.operation_active = False
+
+    def close(self):
+        self.close_overlapped = self.operation_active
+        super().close()
 
 
 class BrieflyDeferredScheduler(FIFOScheduler):
@@ -314,6 +351,41 @@ def test_endpoint_action_failure_disconnects_and_rejects_command() -> None:
     assert any(event.kind == "action_rejected_endpoint" for event in events)
     assert any(event.kind == "session_disconnected" for event in events)
     assert endpoint.closed
+
+
+def test_close_waits_for_timed_out_endpoint_worker() -> None:
+    endpoint = ShutdownProbeEndpoint("a")
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+        endpoint_timeout_s=0.005,
+    )
+
+    asyncio.run(engine.run(0.04))
+    engine.close()
+
+    assert endpoint.closed
+    assert not endpoint.close_overlapped
+
+
+def test_async_close_drains_timed_out_coroutine_endpoint() -> None:
+    endpoint = AsyncShutdownProbeEndpoint("a")
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+        endpoint_timeout_s=0.005,
+    )
+
+    async def run_and_close() -> None:
+        await engine.run(0.04)
+        await engine.aclose()
+
+    asyncio.run(run_and_close())
+
+    assert endpoint.closed
+    assert not endpoint.close_overlapped
 
 
 def test_reconnect_waits_for_a_fresh_observation() -> None:

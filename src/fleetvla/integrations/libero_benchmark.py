@@ -154,11 +154,17 @@ def run_smolvla_libero(
     except Exception:
         _close_environments(environments)
         raise
+
+    async def run_and_close() -> tuple:
+        try:
+            return await engine.run(duration_s)
+        finally:
+            await engine.aclose()
+
     try:
-        events = asyncio.run(engine.run(duration_s))
+        events = asyncio.run(run_and_close())
         metrics = serving_metrics(events, endpoints, duration_s)
     finally:
-        engine.close()
         _close_environments(environments)
 
     body = {

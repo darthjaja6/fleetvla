@@ -31,6 +31,11 @@ close callbacks outside the shared asyncio loop and applies
 run concurrently with its own close/reconnect or block a healthy peer. Python
 cannot terminate a native driver call safely after timeout; hardware adapters
 must still configure finite device or middleware deadlines.
+Before destroying a shared driver or simulator environment, call
+`await engine.aclose()` in the same event loop that ran the engine. It waits for
+timed-out endpoint callbacks before closing endpoints. Synchronous endpoints may
+use `engine.close()` after `run()` returns; it serializes shutdown against any
+worker thread that outlived its callback timeout.
 
 `ROS2Endpoint` uses a node's standard `create_subscription` and
 `create_publisher` methods. Application code supplies message types and
