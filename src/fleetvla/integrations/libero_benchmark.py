@@ -64,12 +64,12 @@ def run_smolvla_libero(
     try:
         import numpy as np
         import torch
-        from lerobot.envs import (  # type: ignore[import-not-found]
+        from lerobot.envs import (
             make_env,
             make_env_pre_post_processors,
             preprocess_observation,
         )
-        from lerobot.envs.configs import LiberoEnv  # type: ignore[import-not-found]
+        from lerobot.envs.configs import LiberoEnv
     except ImportError as error:
         raise ImportError(
             "LIBERO system benchmarks require Python 3.12+ and the "

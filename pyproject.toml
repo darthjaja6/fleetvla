@@ -47,6 +47,10 @@ allow-direct-references = true
 testpaths = ["tests"]
 addopts = "-q"
 
+[[tool.mypy.overrides]]
+module = ["lerobot", "lerobot.*", "torch", "torch.*"]
+ignore_missing_imports = true
+
 [tool.ruff]
 target-version = "py310"
 line-length = 88

@@ -6008,12 +6008,12 @@
     "useful_actions": 105
   },
   "provenance": {
-    "fleetvla_source_sha256": "39ba44d82b7f5c8105b15f91f14b55721080bf3f03e1d2c0eb6d8975f9672ec2",
+    "fleetvla_source_sha256": "d66e88cfb3c0d96b93aedfa8b29711a1d6fe4f4aa6fa8a941313e29d37637378",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "926e992ee97a3c101d5964dbc5b18533e7bfb1b4780a7010961816ae3e092377"
+  "sha256": "cbe086667a561af3dcd6b9003909c03ee40a453f4987119f94456e8ffb1e88e2"
 }

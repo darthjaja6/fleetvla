@@ -81,12 +81,8 @@ class LeRobotPolicyBackend:
         **backend_kwargs: Any,
     ) -> "LeRobotPolicyBackend":
         try:
-            from lerobot.policies import (  # type: ignore[import-not-found]
-                make_pre_post_processors,
-            )
-            from lerobot.policies.smolvla.modeling_smolvla import (  # type: ignore[import-not-found]
-                SmolVLAPolicy,
-            )
+            from lerobot.policies import make_pre_post_processors
+            from lerobot.policies.smolvla.modeling_smolvla import SmolVLAPolicy
         except ImportError as error:
             raise ImportError(
                 "SmolVLA support requires Python 3.12+ and "
