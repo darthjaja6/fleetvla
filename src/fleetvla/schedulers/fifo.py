@@ -5,7 +5,6 @@ from __future__ import annotations
 from ..types import FleetSnapshot, InferenceCostModel, ScheduleDecision
 from .base import BatchConfig, batch_limit
 
-
 FIFOConfig = BatchConfig
 
 

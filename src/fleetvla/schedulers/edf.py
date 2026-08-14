@@ -5,7 +5,6 @@ from __future__ import annotations
 from ..types import FleetSnapshot, InferenceCostModel, ScheduleDecision, SessionSnapshot
 from .base import BatchConfig, batch_limit
 
-
 EDFConfig = BatchConfig
 
 

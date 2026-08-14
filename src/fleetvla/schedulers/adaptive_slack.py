@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 from ..types import FleetSnapshot, InferenceCostModel, ScheduleDecision, SessionSnapshot
 from .base import batch_limit
@@ -59,7 +59,10 @@ class AdaptiveSlackScheduler:
         selected_count = 1
         if self._slack(ready[0], 1, costs) > 0:
             for size in range(2, limit + 1):
-                if min(self._slack(session, size, costs) for session in ready[:size]) < 0:
+                if (
+                    min(self._slack(session, size, costs) for session in ready[:size])
+                    < 0
+                ):
                     break
                 selected_count = size
         selected = tuple(session.session_id for session in ready[:selected_count])

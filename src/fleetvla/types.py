@@ -15,6 +15,7 @@ class SessionConfig:
     request_threshold_s: float = 0.1
     network_latency_s: float = 0.0
     latency_budget_s: float = 0.25
+    service_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.session_id, str) or not self.session_id:
@@ -34,6 +35,8 @@ class SessionConfig:
         )
         if any(not _is_finite_number(value) or value < 0 for value in timing_values):
             raise ValueError("timing values must be finite and non-negative")
+        if not _is_finite_number(self.service_weight) or self.service_weight <= 0:
+            raise ValueError("service_weight must be finite and positive")
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +61,8 @@ class SessionSnapshot:
     network_latency_s: float
     connected: bool
     in_flight_sequence: int | None
+    chunk_size: int = 1
+    service_weight: float = 1.0
 
     @property
     def is_ready(self) -> bool:
@@ -79,6 +84,7 @@ class FleetSnapshot:
 class InferenceCostModel:
     base_latency_s: float
     per_item_latency_s: float
+    batch_latency_s: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if any(
@@ -86,10 +92,18 @@ class InferenceCostModel:
             for value in (self.base_latency_s, self.per_item_latency_s)
         ):
             raise ValueError("inference latency must be finite and non-negative")
+        if any(
+            not _is_finite_number(value) or value < 0 for value in self.batch_latency_s
+        ):
+            raise ValueError("batch latency profile must be finite and non-negative")
 
     def estimate(self, batch_size: int) -> float:
         if batch_size <= 0:
             raise ValueError("batch_size must be positive")
+        if self.batch_latency_s:
+            if batch_size > len(self.batch_latency_s):
+                raise ValueError("batch size exceeds the measured latency profile")
+            return self.batch_latency_s[batch_size - 1]
         return self.base_latency_s + self.per_item_latency_s * batch_size
 
 
@@ -158,9 +172,7 @@ def _shape_of(value: Any) -> tuple[int, ...]:
     if declared is not None:
         return tuple(int(size) for size in declared)
     if isinstance(value, (str, bytes, bytearray, Mapping)):
-        raise ValueError(
-            f"cannot establish a numeric shape for {type(value).__name__}"
-        )
+        raise ValueError(f"cannot establish a numeric shape for {type(value).__name__}")
     if isinstance(value, (int, float, bool)):
         return ()
     if isinstance(value, (list, tuple)):
@@ -170,9 +182,7 @@ def _shape_of(value: Any) -> tuple[int, ...]:
         if len(set(child_shapes)) != 1:
             raise ValueError("payload field is a ragged sequence")
         return (len(value),) + child_shapes[0]
-    raise ValueError(
-        f"cannot establish a shape for {type(value).__name__}"
-    )
+    raise ValueError(f"cannot establish a shape for {type(value).__name__}")
 
 
 def _is_finite_number(value: Any) -> bool:

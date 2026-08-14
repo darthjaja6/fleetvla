@@ -96,8 +96,11 @@ adapter = LiberoVectorAdapter(
     fallback_action=lambda: zero_action,
 )
 engine = AsyncServingEngine(
-    adapter.endpoints, backend, create_scheduler("adaptive-slack"),
+    adapter.endpoints,
+    backend,
+    create_scheduler("adaptive-slack"),
     max_batch_size=2,
+    scheduler_timeout_s=0.01,
 )
 events = asyncio.run(engine.run(30.0))
 system_metrics = serving_metrics(events, adapter.endpoints, 30.0)
@@ -111,6 +114,7 @@ choose independent sessions and use any registered or local scheduler:
 ```bash
 MUJOCO_GL=egl fleetvla libero --scheduler edf \
   --task 0 --task 1 --duration 3 --execution-horizon 8 \
+  --scheduler-timeout 0.01 \
   --output libero-system-result.json
 ```
 

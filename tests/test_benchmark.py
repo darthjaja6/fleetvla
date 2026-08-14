@@ -1,7 +1,7 @@
 import hashlib
 import json
-import shutil
 import math
+import shutil
 from dataclasses import replace
 from pathlib import Path
 
@@ -45,9 +45,7 @@ def _replace_chunk_with_equal_horizon_rejection(artifact):
 
 def _forge_action_age(artifact):
     _event(artifact, "action_executed")["details"]["action_age_s"] = 0.9
-    artifact["metrics"]["system"].update(
-        action_age_p50_s=0.9, action_age_p95_s=0.9
-    )
+    artifact["metrics"]["system"].update(action_age_p50_s=0.9, action_age_p95_s=0.9)
 
 
 def _forge_inference_latency(artifact):
@@ -56,9 +54,9 @@ def _forge_inference_latency(artifact):
 
 
 def _forge_backend_latency(artifact):
-    _event(artifact, "inference_completed")["details"][
-        "backend_reported_latency_s"
-    ] = 0.9
+    _event(artifact, "inference_completed")["details"]["backend_reported_latency_s"] = (
+        0.9
+    )
 
 
 def _forge_chunk_age(artifact):
@@ -100,6 +98,7 @@ def _valid_system_artifact():
                 "model_revision": "b" * 40,
                 "scheduler": "edf",
                 "scheduler_config": {},
+                "scheduler_timeout_s": 0.01,
                 "duration_s": 1.0,
                 "max_batch_size": 1,
                 "control_hz": 1.0,
@@ -151,6 +150,17 @@ def _valid_system_artifact():
                     "kind": "observation_ready",
                     "session_id": session_id,
                     "details": {"sequence": 0},
+                },
+                {
+                    "time_s": 0.004,
+                    "kind": "scheduler_decision",
+                    "session_id": None,
+                    "details": {
+                        "latency_s": 0.001,
+                        "selected_session_ids": [session_id],
+                        "deferred": False,
+                        "fallback": False,
+                    },
                 },
                 {
                     "time_s": 0.005,
@@ -297,6 +307,30 @@ def test_system_artifact_verifies_but_does_not_replay(tmp_path) -> None:
     assert verify_artifact(path)["artifact_kind"] == "system"
     with pytest.raises(ValueError, match="verified but not replayed"):
         replay_artifact(path)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        lambda artifact: _remove_event(artifact, "scheduler_decision"),
+        lambda artifact: _event(artifact, "scheduler_decision")["details"].update(
+            selected_session_ids=[]
+        ),
+        lambda artifact: _event(artifact, "scheduler_decision")["details"].update(
+            selected_session_ids=["alien"]
+        ),
+    ],
+)
+def test_system_artifact_binds_scheduler_decision_to_batch(tmp_path, mutation) -> None:
+    artifact = _valid_system_artifact()
+    artifact.pop("sha256")
+    mutation(artifact)
+    _seal_artifact(artifact)
+    path = tmp_path / "system.json"
+    path.write_text(json.dumps(artifact))
+
+    with pytest.raises(ValueError):
+        verify_artifact(path)
 
 
 def test_artifact_source_must_match_installed_source_by_default(tmp_path) -> None:
@@ -471,9 +505,7 @@ def test_system_artifact_rejects_internally_inconsistent_values(
         lambda artifact: artifact["config"].update(duration_s=2.0),
     ],
 )
-def test_system_artifact_rejects_invalid_session_lifecycle(
-    tmp_path, mutation
-) -> None:
+def test_system_artifact_rejects_invalid_session_lifecycle(tmp_path, mutation) -> None:
     artifact = _valid_system_artifact()
     artifact.pop("sha256")
     mutation(artifact)
@@ -507,9 +539,7 @@ def test_system_artifact_accepts_failure_reset_and_fallback(tmp_path) -> None:
     artifact = _valid_system_artifact()
     artifact.pop("sha256")
     session_id = "libero_spatial-0"
-    completion_index = artifact["events"].index(
-        _event(artifact, "inference_completed")
-    )
+    completion_index = artifact["events"].index(_event(artifact, "inference_completed"))
     artifact["events"][completion_index:] = [
         {
             "time_s": 0.052,
@@ -626,6 +656,17 @@ def test_system_artifact_requires_stale_chunk_after_in_flight_reset(
             "kind": "observation_ready",
             "session_id": session_id,
             "details": {"sequence": 1},
+        },
+        {
+            "time_s": 0.0705,
+            "kind": "scheduler_decision",
+            "session_id": None,
+            "details": {
+                "latency_s": 0.001,
+                "selected_session_ids": [session_id],
+                "deferred": False,
+                "fallback": False,
+            },
         },
         {
             "time_s": 0.071,
@@ -774,7 +815,7 @@ def test_system_artifact_requires_disconnect_after_action_failure(tmp_path) -> N
 @pytest.mark.parametrize(
     ("predecessor", "time_s", "message"),
     [
-        ("request_dispatched", 0.006, "enter its batch"),
+        ("request_dispatched", 0.006, "applied atomically"),
         ("action_dequeued", 0.1, "receive its outcome"),
     ],
 )
@@ -870,9 +911,7 @@ def test_algorithm_final_inference_must_finish_when_due(tmp_path) -> None:
 
 @pytest.mark.parametrize("kind", ["algorithm", "system"])
 @pytest.mark.parametrize("mutation", ["time", "session"])
-def test_artifact_rejects_invalid_event_stream(
-    tmp_path, kind, mutation
-) -> None:
+def test_artifact_rejects_invalid_event_stream(tmp_path, kind, mutation) -> None:
     if kind == "algorithm":
         path = write_artifact(run_benchmark(default_config()), tmp_path / "run.json")
         artifact = json.loads(path.read_text())
@@ -1011,10 +1050,7 @@ def test_contended_workload_exposes_scheduler_tradeoffs() -> None:
         (
             metrics.useful_actions,
             round(metrics.fairness, 6),
-            tuple(
-                int(session["actions"])
-                for session in metrics.per_session.values()
-            ),
+            tuple(int(session["actions"]) for session in metrics.per_session.values()),
         )
         for metrics in runs.values()
     }
@@ -1038,9 +1074,7 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
         "        return ScheduleDecision(tuple(s.session_id for s in "
         "fleet.ready_sessions[:fleet.max_batch_size]), 'embedded')\n"
     )
-    config = replace(
-        default_config(), scheduler=f"{scheduler_path}:Custom"
-    )
+    config = replace(default_config(), scheduler=f"{scheduler_path}:Custom")
     artifact = write_artifact(run_benchmark(config), tmp_path / "run.json")
     assert any(
         event["kind"] == "dispatch_deferred"
@@ -1073,19 +1107,22 @@ def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path) -> None:
     )
     output = tmp_path / "results"
 
-    assert main(
-        [
-            "benchmark",
-            "--duration",
-            "0.1",
-            "--scheduler",
-            "fifo",
-            "--scheduler",
-            f"{scheduler_path}:Custom",
-            "--output",
-            str(output),
-        ]
-    ) == 0
+    assert (
+        main(
+            [
+                "benchmark",
+                "--duration",
+                "0.1",
+                "--scheduler",
+                "fifo",
+                "--scheduler",
+                f"{scheduler_path}:Custom",
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
 
     names = {path.name for path in output.iterdir()}
     assert "heterogeneous-two-arm-fifo-s0.json" in names

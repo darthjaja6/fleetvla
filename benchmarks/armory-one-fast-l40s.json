@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "scheduler": "lookahead",
+  "scheduler_config": {},
+  "environment": "synthetic",
+  "backend": "synthetic",
+  "scenario": "armory-one-fast-l40s",
+  "robots": [
+    {
+      "session_id": "fast-0",
+      "control_hz": 20,
+      "chunk_size": 6,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.3,
+      "start_delay_s": 0.0,
+      "service_weight": 5.0
+    },
+    {
+      "session_id": "slow-0",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-1",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-2",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-3",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-4",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-5",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-6",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-7",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    },
+    {
+      "session_id": "slow-8",
+      "control_hz": 20,
+      "chunk_size": 10,
+      "request_threshold_s": 0.1,
+      "network_latency_s": 0.005,
+      "latency_budget_s": 0.5,
+      "start_delay_s": 0.0,
+      "service_weight": 1.0
+    }
+  ],
+  "duration_s": 10.0,
+  "seed": 0,
+  "base_latency_s": 0.0,
+  "per_item_latency_s": 0.0,
+  "batch_latency_s": [0.073, 0.1098, 0.1424, 0.1775, 0.2111],
+  "max_batch_size": 3,
+  "action_execution": "sequential-buffer",
+  "trace_source": null,
+  "observation_schedule": null
+}

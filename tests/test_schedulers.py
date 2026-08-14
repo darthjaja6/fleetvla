@@ -18,6 +18,8 @@ def _session(
     request_time_s: float,
     buffer_horizon_s: float,
     network_latency_s: float = 0,
+    chunk_size: int = 1,
+    service_weight: float = 1,
 ) -> SessionSnapshot:
     return SessionSnapshot(
         session_id=session_id,
@@ -31,11 +33,19 @@ def _session(
         network_latency_s=network_latency_s,
         connected=True,
         in_flight_sequence=None,
+        chunk_size=chunk_size,
+        service_weight=service_weight,
     )
 
 
 def test_all_registered_schedulers_pass_public_conformance() -> None:
-    assert registry.names() == ("adaptive-slack", "edf", "fifo", "round-robin")
+    assert registry.names() == (
+        "adaptive-slack",
+        "edf",
+        "fifo",
+        "lookahead",
+        "round-robin",
+    )
     for name in registry.names():
         assert len(check_scheduler(lambda name=name: create_scheduler(name))) == 7
 
@@ -95,6 +105,42 @@ def test_round_robin_rotates_when_only_one_session_can_be_selected() -> None:
 
     assert scheduler.schedule(fleet, costs).session_ids == ("a",)
     assert scheduler.schedule(fleet, costs).session_ids == ("b",)
+
+
+def test_lookahead_models_weighted_execution_and_dynamic_batch_size() -> None:
+    fleet = FleetSnapshot(
+        1,
+        (
+            _session(
+                "fast",
+                request_time_s=1,
+                buffer_horizon_s=0,
+                chunk_size=6,
+                service_weight=5,
+            ),
+            _session(
+                "slow",
+                request_time_s=1,
+                buffer_horizon_s=0.5,
+                chunk_size=10,
+            ),
+        ),
+        2,
+    )
+    costs = InferenceCostModel(0, 0, (0.05, 0.2))
+
+    decision = create_scheduler("lookahead").schedule(fleet, costs)
+
+    assert decision.session_ids == ("fast",)
+    assert "weighted executed time" in decision.reason
+
+
+def test_measured_latency_profile_must_cover_requested_batch() -> None:
+    costs = InferenceCostModel(0.02, 0.01, (0.05,))
+
+    assert costs.estimate(1) == 0.05
+    with pytest.raises(ValueError, match="exceeds"):
+        costs.estimate(2)
 
 
 def test_local_scheduler_loads_without_registry_edit() -> None:

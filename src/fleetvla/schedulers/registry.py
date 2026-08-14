@@ -102,6 +102,8 @@ def _validate_value(name: str, value: Any, annotation: Any) -> Any:
             return value
         expected = "a string"
     else:
-        raise TypeError(f"unsupported scheduler config annotation for {name}: {annotation}")
+        raise TypeError(
+            f"unsupported scheduler config annotation for {name}: {annotation}"
+        )
     actual = type(value).__name__
     raise ValueError(f"{name} must be {expected}, got {actual}")

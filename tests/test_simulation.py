@@ -19,9 +19,7 @@ class CoalescingScheduler:
         oldest_request_s = min(session.request_time_s for session in ready)
         dispatch_at_s = oldest_request_s + 0.02
         if fleet.now_s < dispatch_at_s:
-            return ScheduleDecision(
-                (), "wait for peers", defer_until_s=dispatch_at_s
-            )
+            return ScheduleDecision((), "wait for peers", defer_until_s=dispatch_at_s)
         return ScheduleDecision(
             tuple(session.session_id for session in ready), "coalesced"
         )
@@ -34,9 +32,7 @@ def test_scheduler_can_defer_to_coalesce_a_later_request() -> None:
             RobotSpec("second", control_hz=10, chunk_size=1),
         ],
         scheduler=CoalescingScheduler(),
-        backend=SyntheticBackend(
-            chunk_size=1, base_latency_s=0, per_item_latency_s=0
-        ),
+        backend=SyntheticBackend(chunk_size=1, base_latency_s=0, per_item_latency_s=0),
         max_batch_size=2,
         observation_schedule=((0.0, "first"), (0.01, "second")),
     ).run(0.1)
@@ -84,9 +80,7 @@ def test_integer_tick_ordinals_preserve_coincidences_and_end_boundary() -> None:
     ]
     result = FleetSimulator(
         robots,
-        backend=SyntheticBackend(
-            chunk_size=1, base_latency_s=0, per_item_latency_s=0
-        ),
+        backend=SyntheticBackend(chunk_size=1, base_latency_s=0, per_item_latency_s=0),
         max_batch_size=2,
     ).run(0.5)
 
@@ -123,9 +117,7 @@ def test_zero_delay_delivery_precedes_control_tick_at_same_time() -> None:
 def test_backend_horizon_mismatch_is_rejected() -> None:
     result = FleetSimulator(
         [RobotSpec("arm", control_hz=10, chunk_size=2)],
-        backend=SyntheticBackend(
-            chunk_size=5, base_latency_s=0, per_item_latency_s=0
-        ),
+        backend=SyntheticBackend(chunk_size=5, base_latency_s=0, per_item_latency_s=0),
     ).run(0.1)
 
     assert result.count("chunk_rejected_horizon") > 0

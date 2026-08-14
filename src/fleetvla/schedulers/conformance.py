@@ -48,13 +48,9 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
     for fleet in fleets:
         decision = factory().schedule(fleet, costs)
         if not isinstance(decision, ScheduleDecision):
-            raise SchedulerConformanceError(
-                "scheduler must return a ScheduleDecision"
-            )
+            raise SchedulerConformanceError("scheduler must return a ScheduleDecision")
         if not isinstance(decision.reason, str):
-            raise SchedulerConformanceError(
-                "schedule decision reason must be a string"
-            )
+            raise SchedulerConformanceError("schedule decision reason must be a string")
         if len(set(decision.session_ids)) != len(decision.session_ids):
             raise SchedulerConformanceError(
                 "scheduler decision contains duplicate sessions"
@@ -63,10 +59,7 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
             raise SchedulerConformanceError(
                 "scheduler must select work or defer to a future time"
             )
-        if (
-            decision.defer_until_s is not None
-            and decision.defer_until_s <= fleet.now_s
-        ):
+        if decision.defer_until_s is not None and decision.defer_until_s <= fleet.now_s:
             raise SchedulerConformanceError(
                 "scheduler deferral must be later than fleet.now_s"
             )

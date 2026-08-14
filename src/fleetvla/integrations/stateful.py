@@ -54,8 +54,7 @@ class StatefulPolicyBackend:
                 for observation in observations
             )
             states = tuple(
-                self._state.get(observation.session_id)
-                for observation in observations
+                self._state.get(observation.session_id) for observation in observations
             )
         return _PreparedBatch(observations, states, tokens)
 
@@ -101,9 +100,7 @@ class StatefulPolicyBackend:
     def infer(
         self, observations: Sequence[Observation], started_at_s: float
     ) -> BackendResult:
-        return self.infer_prepared(
-            self.prepare_batch(observations), started_at_s
-        )
+        return self.infer_prepared(self.prepare_batch(observations), started_at_s)
 
     def reset_session(self, session_id: str) -> None:
         with self._lock:

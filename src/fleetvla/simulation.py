@@ -24,6 +24,7 @@ class RobotSpec:
     network_latency_s: float = 0.0
     latency_budget_s: float = 0.25
     start_delay_s: float = 0.0
+    service_weight: float = 1.0
 
     def __post_init__(self) -> None:
         if not math.isfinite(self.start_delay_s) or self.start_delay_s < 0:
@@ -37,6 +38,7 @@ class RobotSpec:
             request_threshold_s=self.request_threshold_s,
             network_latency_s=self.network_latency_s,
             latency_budget_s=self.latency_budget_s,
+            service_weight=self.service_weight,
         )
 
 

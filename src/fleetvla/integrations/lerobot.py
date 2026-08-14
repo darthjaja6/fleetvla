@@ -166,8 +166,7 @@ def _collate(items: list[dict[str, Any]]) -> dict[str, Any]:
         elif all(isinstance(value, list) for value in values):
             batch[key] = [element for value in values for element in value]
         elif all(
-            type(value) is type(values[0]) and value == values[0]
-            for value in values
+            type(value) is type(values[0]) and value == values[0] for value in values
         ):
             batch[key] = values[0]
         else:

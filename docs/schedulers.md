@@ -13,6 +13,7 @@ robots by remaining executable action time:
 ```python
 from fleetvla import FleetSnapshot, InferenceCostModel, ScheduleDecision
 
+
 class SmallestBufferFirst:
     def schedule(self, fleet: FleetSnapshot, costs: InferenceCostModel):
         ready = sorted(
@@ -20,7 +21,7 @@ class SmallestBufferFirst:
             key=lambda session: (session.buffer_horizon_s, session.session_id),
         )
         return ScheduleDecision(
-            tuple(s.session_id for s in ready[:fleet.max_batch_size]),
+            tuple(s.session_id for s in ready[: fleet.max_batch_size]),
             "smallest action buffer first",
         )
 ```
@@ -48,17 +49,21 @@ It also reevaluates earlier if the ready set changes. Robot control ticks and
 local fallbacks continue during the wait. A deferral must be finite and later
 than `fleet.now_s`; `fleetvla test-scheduler` checks that contract.
 
-`schedule()` itself is synchronous in the current wall-clock engine. Keep its
-computation bounded and return promptly: use `defer_until_s` to express waiting,
-never `sleep()` inside a scheduler. A slow decision delays process-local control
-ticks and fallbacks; robot-side watchdogs remain the independent safety boundary.
-Decision isolation and enforceable scheduler time budgets are not implemented.
+`schedule()` remains an ordinary synchronous method, but the wall-clock engine
+runs it on a dedicated daemon worker while control ticks continue. Each decision
+has a 10 ms default budget (`scheduler_timeout_s`); a timeout, exception, or
+invalid decision disables that worker and switches the run to EDF. The raw trace
+records `scheduler_decision` latency and any `scheduler_failed` transition.
+Keep computation bounded, return promptly, and use `defer_until_s` rather than
+sleeping. This isolates serving timing and failure for trusted plugins; it is
+not a security sandbox for untrusted Python. Deterministic simulator benchmarks
+call schedulers directly and therefore have no wall-clock timeout.
 
-Then run it on the versioned heterogeneous workload:
+Then run it on the versioned batching workload, which exposes batch-size choices:
 
 ```bash
 fleetvla benchmark \
-  --config benchmarks/heterogeneous.json \
+  --config benchmarks/batching.json \
   --scheduler ./examples/my_scheduler.py:SmallestBufferFirst \
   --output results/custom.json \
   --timeline
@@ -88,12 +93,12 @@ reruns the original environment and requires every event and metric to match.
 The derived artifact embeds the normalized arrival schedule, so it remains
 replayable if it is moved or the source artifact is removed.
 
-The heterogeneous workload is a quick integration check and may not separate
-similar policies. Before proposing a scheduler, also run
-`benchmarks/batching.json` to exercise coalescing with two batch slots and
-`benchmarks/contention.json` to exercise ordering and fairness under a
-single-slot backend. Report all resulting trade-offs, including a tie or
-regression.
+Also run `benchmarks/contention.json` for ordering and fairness under a
+single-slot backend. `benchmarks/heterogeneous.json` remains a quick integration
+check, but similar policies often tie on it. Use
+`benchmarks/armory-one-fast-l40s.json` when an algorithm models weighted
+execution horizons and dynamic batch size. Report every trade-off, including a
+tie or regression.
 
 A local-scheduler artifact also embeds the exact single-file source and its
 hash. Without the opt-in flag, FleetVLA refuses to execute code embedded in
@@ -103,19 +108,22 @@ JSON. Built-in scheduler artifacts never require the flag.
 
 `buffer_horizon_s` is executable actions divided by control frequency; compare
 it with predicted inference and transport time, not with action count.
-`request_time_s` timestamps the ready observation. `in_flight_sequence` and
+`request_time_s` timestamps the ready observation. `chunk_size` is the
+session's execution horizon, while `service_weight` expresses an explicit
+operator priority such as Armory's fast-tier weight. `in_flight_sequence` and
 `connected` distinguish backpressure and endpoint state, although only ready
 sessions can be selected. Generations and sequence numbers remain runtime
 responsibilities: a scheduler never constructs or accepts chunks.
 
-The built-in cost model is deliberately a linear batch-latency estimate
-(`base_latency_s + per_item_latency_s * batch_size`). Backends may update its
-measured coefficients, but the current public scheduler snapshot does not yet
-model shape-, cache-, or device-specific costs.
+`InferenceCostModel` accepts either a linear estimate
+(`base_latency_s + per_item_latency_s * batch_size`) or a measured latency value
+for every supported batch size. The Armory-compatible workload uses the paper's
+published L40S profile rather than fitting it to a line.
 
 Built-ins live in `fleetvla/schedulers/` and are registered explicitly in that
-package's `__init__.py`: FIFO, round robin, earliest deadline first, and adaptive
-slack. Algorithm-specific configuration is validated before a run. For example:
+package's `__init__.py`: FIFO, round robin, earliest deadline first, adaptive
+slack, and the attributed L=1 Lookahead adaptation. Algorithm-specific
+configuration is validated before a run. For example:
 
 ```bash
 fleetvla benchmark --scheduler adaptive-slack \

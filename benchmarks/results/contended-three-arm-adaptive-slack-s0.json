@@ -4,6 +4,7 @@
     "action_execution": "sequential-buffer",
     "backend": "synthetic",
     "base_latency_s": 0.1,
+    "batch_latency_s": [],
     "duration_s": 5.0,
     "environment": "synthetic",
     "max_batch_size": 1,
@@ -16,6 +17,7 @@
         "latency_budget_s": 0.5,
         "network_latency_s": 0.005,
         "request_threshold_s": 0.04,
+        "service_weight": 1.0,
         "session_id": "fast-arm",
         "start_delay_s": 0.0
       },
@@ -25,6 +27,7 @@
         "latency_budget_s": 0.15,
         "network_latency_s": 0.01,
         "request_threshold_s": 0.08,
+        "service_weight": 1.0,
         "session_id": "medium-arm",
         "start_delay_s": 0.0
       },
@@ -34,6 +37,7 @@
         "latency_budget_s": 0.05,
         "network_latency_s": 0.02,
         "request_threshold_s": 0.15,
+        "service_weight": 1.0,
         "session_id": "slow-arm",
         "start_delay_s": 0.0
       }
@@ -6064,12 +6068,12 @@
     "useful_actions": 109
   },
   "provenance": {
-    "fleetvla_source_sha256": "2501627445e3a8e63358e9927b4124f55a97bd6bcbcf4b8801593d3aa164cdc7",
+    "fleetvla_source_sha256": "a7a227cc697887114a3dcc1ee0f01028a634f019de3e5e56df4835eb4e15fb92",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "a1e841ddfd9de4e493768dd49f79d5c740789465b08ecb9793747ca40b7d84ee"
+  "sha256": "4b50bf8c10fd8b5ec5fe90e38d621018dccfe39bde2c4857b80a92d362ed1507"
 }

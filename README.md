@@ -8,7 +8,7 @@ path.
 
 The project is under active development. The current runnable system has a
 deterministic discrete-event simulator, stateful sessions, stale-result
-rejection, a batch-aware synthetic backend, structured traces, four schedulers,
+rejection, a batch-aware synthetic backend, structured traces, five schedulers,
 direct local scheduler loading, and reproducible benchmark artifacts. Optional
 policy, parallel simulator, wall-clock serving, LeRobot robot, and ROS 2
 adapters reuse the same scheduler contract; physical validation remains
@@ -45,9 +45,24 @@ Ubuntu), then recreate `.venv`. After activation, check `python --version`;
 FleetVLA requires Python 3.10 or newer.
 
 Without administrator access, an environment manager that bundles its own pip
-seeder is also sufficient. For example, if `uv` is available, replace the first
-command with `uv venv --seed .venv`, then activate and continue with the same
-install. The `--seed` flag installs pip into the environment.
+seeder is also sufficient. If neither `pip` nor `uv` is installed, this complete
+non-admin path keeps the tool, cache, and managed-Python metadata inside the
+checkout:
+
+```bash
+mkdir -p .tools .uv-cache .uv-python
+curl -LsSf https://astral.sh/uv/install.sh | \
+  env UV_UNMANAGED_INSTALL="$PWD/.tools" sh
+UV_CACHE_DIR="$PWD/.uv-cache" \
+UV_PYTHON_INSTALL_DIR="$PWD/.uv-python" \
+  .tools/uv venv --seed --clear .venv
+. .venv/bin/activate
+python -m pip install -e .
+```
+
+The installer requires network access and `curl`; use your distribution's
+packaged `uv` instead when available. `--seed` installs pip, and `--clear`
+replaces the partial environment left by a failed `python3 -m venv` attempt.
 
 ## Lifecycle in concrete terms
 
@@ -72,7 +87,8 @@ Compare all built-in algorithms on the same three-arm workload:
 ```bash
 fleetvla benchmark --config benchmarks/contention.json \
   --scheduler fifo --scheduler round-robin --scheduler edf \
-  --scheduler adaptive-slack --output results --timeline
+  --scheduler adaptive-slack --scheduler lookahead \
+  --output results --timeline
 ```
 
 The comparison reports useful actions, starvation, action age, fairness, and
@@ -133,8 +149,8 @@ The paper [Action Chunk Scheduling for Batched Robot Policy
 Serving](https://arxiv.org/abs/2608.00337) and its
 [Armory implementation](https://github.com/GaTech-RL2/armory) established the
 shared-GPU action-chunk scheduling problem and introduced Lookahead alongside
-classical baselines. FleetVLA does not claim those ideas as its invention. It
-builds a separate, environment-neutral scheduler API, contribution path, and
-reproducible benchmark surface intended to support that work and future
-algorithms. Armory remains the more complete reference for its paper's OpenPI,
-GR00T, and LIBERO evaluation path.
+classical baselines. FleetVLA's built-in `lookahead` is an attributed L=1
+adaptation over its immutable snapshot and includes a controlled systems proxy
+using the paper's ten-session horizons and published L40S latency profile.
+FleetVLA does not claim those ideas as its invention. Armory remains the more
+complete reference for the paper's OpenPI, GR00T, and LIBERO evaluation path.

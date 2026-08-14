@@ -77,7 +77,10 @@ class FleetRuntime:
         session.next_sequence += 1
         session.ready = observation
         self.events.append(
-            self.clock.now(), "observation_ready", session_id, sequence=observation.sequence
+            self.clock.now(),
+            "observation_ready",
+            session_id,
+            sequence=observation.sequence,
         )
         return observation
 
@@ -98,6 +101,8 @@ class FleetRuntime:
                 in_flight_sequence=(
                     session.in_flight.sequence if session.in_flight else None
                 ),
+                chunk_size=session.config.chunk_size,
+                service_weight=session.config.service_weight,
             )
             for session in self._sessions.values()
         )
@@ -107,7 +112,9 @@ class FleetRuntime:
         if decision.defer_until_s is not None:
             raise ValueError("cannot prepare a deferred schedule decision")
         if not decision.session_ids:
-            raise ValueError("scheduler returned an empty batch while work was available")
+            raise ValueError(
+                "scheduler returned an empty batch while work was available"
+            )
         if len(decision.session_ids) > self.max_batch_size:
             raise ValueError("scheduler exceeded max_batch_size")
         observations: list[Observation] = []
@@ -122,8 +129,7 @@ class FleetRuntime:
                     "session_id": session_id,
                     "buffer_horizon_s": len(session.actions)
                     / session.config.control_hz,
-                    "request_age_s": self.clock.now()
-                    - session.ready.captured_at_s,
+                    "request_age_s": self.clock.now() - session.ready.captured_at_s,
                 }
             )
         for observation in observations:

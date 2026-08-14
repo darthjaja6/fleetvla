@@ -6,6 +6,10 @@ dimensions: scheduler and typed configuration, environment, backend latency
 profile, fleet scenario, per-robot control and network timing, action-execution
 policy, duration, and seed.
 
+A backend may declare a linear latency model or an exact measured latency for
+each supported batch size. Exact profiles are preferable when evaluating
+dynamic batch-size algorithms because a fitted line can change their decisions.
+
 The synthetic and trace environments are deterministic: their `seed` is a
 recorded experiment coordinate and changing it alone does not randomize request
 arrivals. Integrations that use stochastic policies or environments are
@@ -36,6 +40,8 @@ Metrics have explicit units and denominators:
 `dispatch_deferred` events record when a scheduler deliberately waited and the
 absolute virtual- or monotonic-clock deadline it requested. Use them with batch
 sizes and action age to evaluate whether coalescing helped or only added delay.
+Wall-clock traces also record `scheduler_decision` latency and
+`scheduler_failed` transitions to the EDF fallback.
 
 Compare metric tables and timelines together. A scheduler may improve useful
 work while making one robot less fresh, or improve fairness by using smaller
@@ -50,7 +56,10 @@ whitespace and key formatting, so it is intentionally different from running
 
 Use `benchmarks/contention.json` to emphasize deadline/fairness choices under a
 single-slot backend. Use `benchmarks/batching.json` to expose the latency versus
-batch-size decision with two batch slots. Neither is a universal score.
+batch-size decision with two batch slots. The
+`benchmarks/armory-one-fast-l40s.json` systems proxy fixes the paper's published
+L40S latency profile and heterogeneous horizons for a controlled RR/EDF/
+Lookahead comparison. None is a universal score.
 
 The optional system track uses the same scheduler with measured policy and
 simulator latency:

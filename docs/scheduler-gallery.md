@@ -10,6 +10,7 @@ conformance result, and a versioned reproducible workload.
 | Round robin | Rotate service across ready session IDs | Classical baseline | `benchmarks/contention.json` |
 | EDF | Earliest action-buffer or request deadline | Classical real-time baseline | `benchmarks/contention.json` |
 | Adaptive slack | Protect predicted buffer slack, batch while feasible | FleetVLA contributors; experimental | `benchmarks/batching.json` |
+| Lookahead | Maximize weighted new-chunk execution per inference second over a one-second model horizon | Bansal et al.; FleetVLA L=1 adaptation | `benchmarks/armory-one-fast-l40s.json` |
 
 The published `contended-three-arm` seed-0 artifacts replay every event and
 metric exactly:
@@ -25,12 +26,35 @@ The table exposes the trade-off instead of naming a winner: EDF and adaptive
 slack improve useful work and tail age here, round robin is fairer, and the
 single-slot scenario cannot demonstrate batching gains.
 
-Armory's Lookahead algorithm from [Action Chunk Scheduling for Batched Robot
-Policy Serving](https://arxiv.org/abs/2608.00337) is an intended compatibility
-target, not currently implemented. FleetVLA's scheduler contract can now defer
-dispatch to coalesce near-future arrivals, which is one required building
-block; Lookahead should only be added after its complete algorithm and
-assumptions can be faithfully adapted and reproduced.
+## Armory-compatible Lookahead comparison
+
+The built-in Lookahead follows the L=1 variant deployed in [Action Chunk
+Scheduling for Batched Robot Policy
+Serving](https://arxiv.org/abs/2608.00337): enumerate candidate batches, simulate
+how the newly generated chunks contribute weighted executed time over a
+one-second horizon, normalize by batch inference time, and dispatch the
+highest-scoring batch. Candidate pruning matches the public Armory priority-tier
+prefix strategy inspected at commit `e876202ede99723f4be40d8d7cab31847bbd14a9`.
+
+The versioned `armory-one-fast-l40s` workload holds ten 20 Hz sessions, fast/slow
+execution horizons 6/10, max batch size 3, 5 ms action delivery, and the paper's
+published L40S batch latencies fixed for every scheduler. The fast session has
+weight 5 and the nine slow sessions weight 1. In the deterministic 10-second
+systems proxy:
+
+| Scheduler | Useful actions | Starvation | Fast progress | Representative slow progress | Artifact |
+|---|---:|---:|---:|---:|---|
+| Round robin | 1,737 | 13.2% | 73.0% | 90.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-round-robin-s0.json) |
+| EDF | 1,755 | 12.2% | 81.0% | 90.5% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-edf-s0.json) |
+| Lookahead @ 5 | 1,650 | 17.5% | 99.0% | 82.0% | [`JSON`](../benchmarks/results/armory-one-fast/armory-one-fast-l40s-lookahead-s0.json) |
+
+This comparison demonstrates the intended control surface, not universal
+dominance: Lookahead nearly eliminates fast-tier starvation by spending slow-
+tier and aggregate progress. It is an apples-to-apples FleetVLA scheduler
+comparison and a parameter-compatible systems proxy, not a reproduction of
+Armory's policy success or real-robot throughput. Armory remains authoritative
+for its full execution mirror, OpenPI/GR00T stack, LIBERO experiments, and
+physical results.
 
 ## System-track evidence
 

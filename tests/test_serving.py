@@ -1,13 +1,13 @@
 import asyncio
-import time
 import threading
+import time
 
 import pytest
 
 from fleetvla import (
     ActionChunk,
-    FIFOScheduler,
     FieldSpec,
+    FIFOScheduler,
     ScheduleDecision,
     SessionConfig,
     SyntheticBackend,
@@ -88,10 +88,14 @@ class BrieflyDeferredScheduler(FIFOScheduler):
         )
         dispatch_at_s = oldest_request_s + 0.02
         if fleet.now_s < dispatch_at_s:
-            return ScheduleDecision(
-                (), "wait briefly", defer_until_s=dispatch_at_s
-            )
+            return ScheduleDecision((), "wait briefly", defer_until_s=dispatch_at_s)
         return super().schedule(fleet, costs)
+
+
+class InvalidScheduler:
+    def schedule(self, fleet, costs):
+        del fleet, costs
+        return ScheduleDecision(("alien",), "invalid session")
 
 
 class FailingBackend(SyntheticBackend):
@@ -210,12 +214,10 @@ def test_wall_clock_metrics_count_control_ticks_missed_by_slow_endpoint() -> Non
     actions = sum(event.kind == "action_executed" for event in events)
     metrics = serving_metrics(events, [endpoint], 0.12)
     assert missed > 0
-    assert metrics.per_session["a"]["starved_ticks"] == (
-        missed + ordinary_starvation
+    assert metrics.per_session["a"]["starved_ticks"] == (missed + ordinary_starvation)
+    assert metrics.starvation_frequency == (missed + ordinary_starvation) / (
+        missed + ordinary_starvation + actions
     )
-    assert metrics.starvation_frequency == (
-        missed + ordinary_starvation
-    ) / (missed + ordinary_starvation + actions)
 
 
 def test_wall_clock_does_not_count_ticks_beyond_run_end() -> None:
@@ -229,14 +231,62 @@ def test_wall_clock_does_not_count_ticks_beyond_run_end() -> None:
     events = asyncio.run(engine.run(0.1))
 
     accounted = sum(
-        event.kind in {"action_executed", "action_starved"}
-        for event in events
+        event.kind in {"action_executed", "action_starved"} for event in events
     ) + sum(
         event.details["count"]
         for event in events
         if event.kind == "control_ticks_missed"
     )
     assert accounted == 5
+    assert any(event.kind == "scheduler_failed" for event in events)
+    decision = next(event for event in events if event.kind == "scheduler_decision")
+    assert decision.details["fallback"] is True
+
+
+def test_scheduler_timeout_does_not_block_control_fallbacks() -> None:
+    endpoint = FakeEndpoint("a")
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        BlockingScheduler(),
+        scheduler_timeout_s=0.005,
+    )
+
+    started = time.monotonic()
+    events = asyncio.run(engine.run(0.08))
+
+    assert time.monotonic() - started < 0.18
+    failure = next(event for event in events if event.kind == "scheduler_failed")
+    assert "decision budget" in failure.details["error"]
+    assert any(event.kind == "action_executed" for event in events)
+    assert any(event.kind == "batch_dispatched" for event in events)
+
+
+def test_invalid_scheduler_decision_falls_back_without_poisoning_trace() -> None:
+    engine = AsyncServingEngine(
+        [FakeEndpoint("a")],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        InvalidScheduler(),
+    )
+
+    events = asyncio.run(engine.run(0.06))
+
+    assert any(event.kind == "scheduler_failed" for event in events)
+    decisions = [event for event in events if event.kind == "scheduler_decision"]
+    assert decisions
+    assert all(event.details["selected_session_ids"] == ("a",) for event in decisions)
+    assert all(event.details["fallback"] is True for event in decisions)
+
+
+@pytest.mark.parametrize("timeout_s", [0, float("nan"), float("inf")])
+def test_scheduler_timeout_must_be_finite_and_positive(timeout_s) -> None:
+    with pytest.raises(ValueError, match="scheduler_timeout_s"):
+        AsyncServingEngine(
+            [FakeEndpoint("a")],
+            SyntheticBackend(),
+            FIFOScheduler(),
+            scheduler_timeout_s=timeout_s,
+        )
 
 
 def test_endpoint_action_failure_disconnects_and_rejects_command() -> None:
@@ -270,9 +320,7 @@ def test_backend_failure_resets_generation_and_uses_local_fallback() -> None:
 @pytest.mark.parametrize("backend_type", [EmptyBackend, UnknownSessionBackend])
 def test_malformed_backend_result_uses_batch_failure_path(backend_type) -> None:
     endpoint = FakeEndpoint("a")
-    engine = AsyncServingEngine(
-        [endpoint], backend_type(chunk_size=2), FIFOScheduler()
-    )
+    engine = AsyncServingEngine([endpoint], backend_type(chunk_size=2), FIFOScheduler())
 
     events = asyncio.run(engine.run(0.06))
 

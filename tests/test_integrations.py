@@ -1,11 +1,11 @@
-import math
 import asyncio
+import math
 
 import pytest
 
 from fleetvla import (
-    FIFOScheduler,
     FieldSpec,
+    FIFOScheduler,
     Observation,
     SessionConfig,
     SyntheticBackend,
@@ -119,7 +119,9 @@ def test_ros2_bridge_uses_topic_conversion_and_safe_fallback() -> None:
     assert node.publisher.messages == [{"command": 2}, {"command": 0}]
 
 
-def test_ros2_bridge_rejects_unsafe_or_closed_actions_and_waits_after_reconnect() -> None:
+def test_ros2_bridge_rejects_unsafe_or_closed_actions_and_waits_after_reconnect() -> (
+    None
+):
     node = FakeNode()
     endpoint = ROS2Endpoint(
         node,
@@ -215,9 +217,7 @@ def test_lerobot_policy_backend_dynamic_batches_action_chunks() -> None:
         def predict_action_chunk(self, batch):
             assert not torch.is_grad_enabled()
             assert batch["state"].shape == (2, 2)
-            return torch.tensor(
-                [[[1.0], [2.0]], [[3.0], [4.0]]], dtype=torch.float32
-            )
+            return torch.tensor([[[1.0], [2.0]], [[3.0], [4.0]]], dtype=torch.float32)
 
     backend = LeRobotPolicyBackend(Policy())
     observations = (
@@ -348,9 +348,7 @@ def test_stateful_policy_state_is_session_local_and_resettable() -> None:
             for payload, state in zip(payloads, states)
         ]
 
-    backend = StatefulPolicyBackend(
-        predict, base_latency_s=0, per_item_latency_s=0
-    )
+    backend = StatefulPolicyBackend(predict, base_latency_s=0, per_item_latency_s=0)
     first = backend.infer(
         (Observation("a", 0, 0, 0, 1), Observation("b", 0, 0, 0, 2)), 0
     )
@@ -376,9 +374,7 @@ def test_stateful_reset_invalidates_in_flight_state_write() -> None:
         assert release.wait(2)
         return [PolicyPrediction((1,), "stale-state")]
 
-    backend = StatefulPolicyBackend(
-        predict, base_latency_s=0, per_item_latency_s=0
-    )
+    backend = StatefulPolicyBackend(predict, base_latency_s=0, per_item_latency_s=0)
     worker = threading.Thread(
         target=backend.infer,
         args=((Observation("arm", 0, 0, 0, 1),), 0),

@@ -5,6 +5,7 @@ Describe the concrete workflow this changes and its limits.
 ## Validation
 
 - [ ] Core tests pass
+- [ ] `python -m ruff check .` passes
 - [ ] Scheduler changes pass `fleetvla test-scheduler`
 - [ ] Reproducible workload/artifact is included or linked where relevant
 - [ ] Ordering, time units, resets, stale generations, and failure paths were tested

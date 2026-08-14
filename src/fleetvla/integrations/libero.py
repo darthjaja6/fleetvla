@@ -51,9 +51,7 @@ class LiberoVectorAdapter:
         self.addressing = addressing
         self.reset_kwargs = dict(reset_kwargs or {})
         self.max_episode_steps = max_episode_steps
-        self.metrics = {
-            config.session_id: TaskMetrics() for config in session_configs
-        }
+        self.metrics = {config.session_id: TaskMetrics() for config in session_configs}
         self.endpoints = [
             _LiberoEndpoint(
                 self,
@@ -121,9 +119,7 @@ class _LiberoEndpoint:
             done = _first(terminated) or _first(truncated)
             info_value = _first(info)
             success = bool(
-                info_value.get(
-                    "is_success", info_value.get("success", False)
-                )
+                info_value.get("is_success", info_value.get("success", False))
                 if isinstance(info_value, Mapping)
                 else False
             )

@@ -12,13 +12,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from ..serving import AsyncServingEngine, serving_metrics
-from ..schedulers import create_scheduler
-from ..types import SessionConfig
 from ..benchmark import fleetvla_source_sha256
+from ..schedulers import create_scheduler
+from ..serving import AsyncServingEngine, serving_metrics
+from ..types import SessionConfig
 from .lerobot import LeRobotPolicyBackend
 from .libero import LiberoVectorAdapter
-
 
 SYSTEM_ARTIFACT_VERSION = 1
 
@@ -37,6 +36,7 @@ def run_smolvla_libero(
     episode_length: int = 100,
     execution_horizon: int | None = None,
     seed: int = 0,
+    scheduler_timeout_s: float = 0.01,
 ) -> dict[str, Any]:
     """Run a measured wall-clock benchmark and return a JSON-ready artifact."""
 
@@ -50,6 +50,8 @@ def run_smolvla_libero(
         raise ValueError("control_hz must be finite and positive")
     if execution_horizon is not None and execution_horizon <= 0:
         raise ValueError("execution_horizon must be positive")
+    if not math.isfinite(scheduler_timeout_s) or scheduler_timeout_s <= 0:
+        raise ValueError("scheduler timeout must be finite and positive")
 
     scheduler = create_scheduler(scheduler_name, scheduler_config)
     scheduler_source = None
@@ -57,9 +59,7 @@ def run_smolvla_libero(
     if ":" in scheduler_name:
         scheduler_path = Path(scheduler_name.rsplit(":", 1)[0]).resolve()
         scheduler_source = scheduler_path.read_text(encoding="utf-8")
-        scheduler_source_sha256 = hashlib.sha256(
-            scheduler_source.encode()
-        ).hexdigest()
+        scheduler_source_sha256 = hashlib.sha256(scheduler_source.encode()).hexdigest()
 
     try:
         import numpy as np
@@ -144,6 +144,7 @@ def run_smolvla_libero(
             scheduler,
             max_batch_size=max_batch_size,
             inference_timeout_s=max(10.0, duration_s),
+            scheduler_timeout_s=scheduler_timeout_s,
         )
     except Exception:
         _close_environments(environments)
@@ -183,6 +184,7 @@ def run_smolvla_libero(
             "model_revision": revision,
             "scheduler": scheduler_name,
             "scheduler_config": scheduler_config,
+            "scheduler_timeout_s": scheduler_timeout_s,
             "duration_s": duration_s,
             "max_batch_size": max_batch_size,
             "control_hz": control_hz,

@@ -12,15 +12,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from .benchmark import (
-    BenchmarkConfig,
     default_config,
     load_config,
     render_timeline,
     replay_artifact,
     run_matrix,
     trace_config,
-    write_artifact,
     verify_artifact,
+    write_artifact,
 )
 from .schedulers import check_scheduler, create_scheduler, registry
 from .simulation import FleetSimulator, RobotSpec
@@ -77,12 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         help=f"repeat to compare; built-ins: {', '.join(registry.names())}",
     )
-    benchmark.add_argument(
-        "--scheduler-config", help="configuration as JSON"
-    )
-    benchmark.add_argument(
-        "--environment", choices=("synthetic", "trace")
-    )
+    benchmark.add_argument("--scheduler-config", help="configuration as JSON")
+    benchmark.add_argument("--environment", choices=("synthetic", "trace"))
     benchmark.add_argument("--trace", metavar="ARTIFACT")
     benchmark.add_argument("--duration", type=float)
     benchmark.add_argument("--seed", type=int)
@@ -124,13 +119,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     libero.add_argument("--suite", default="libero_spatial", help="LIBERO suite")
     libero.add_argument(
-        "--task", type=int, action="append", dest="tasks", help="repeat for each task session"
+        "--task",
+        type=int,
+        action="append",
+        dest="tasks",
+        help="repeat for each task session",
     )
-    libero.add_argument("--scheduler", default="edf", help="registered name or ./file.py:Class")
-    libero.add_argument("--scheduler-config", default="{}", help="scheduler configuration as JSON")
-    libero.add_argument("--duration", type=float, default=3.0, help="wall-clock run seconds")
+    libero.add_argument(
+        "--scheduler", default="edf", help="registered name or ./file.py:Class"
+    )
+    libero.add_argument(
+        "--scheduler-config", default="{}", help="scheduler configuration as JSON"
+    )
+    libero.add_argument(
+        "--duration", type=float, default=3.0, help="wall-clock run seconds"
+    )
     libero.add_argument("--max-batch-size", type=int, default=2)
     libero.add_argument("--control-hz", type=float, default=20)
+    libero.add_argument(
+        "--scheduler-timeout",
+        type=float,
+        default=0.01,
+        help="maximum seconds for one scheduler decision before EDF fallback",
+    )
     libero.add_argument("--episode-length", type=int, default=100)
     libero.add_argument(
         "--execution-horizon",
@@ -179,14 +190,22 @@ def _benchmark(args: argparse.Namespace) -> int:
     else:
         destinations = [
             output
-            / f"{run.config.scenario}-{_scheduler_filename(run.config.scheduler)}-s{run.config.seed}.json"
+            / (
+                f"{run.config.scenario}-"
+                f"{_scheduler_filename(run.config.scheduler)}-"
+                f"s{run.config.seed}.json"
+            )
             for run in runs
         ]
     print("scheduler       actions  starvation  p95 age  fairness  batches")
     for run, destination in zip(runs, destinations):
         write_artifact(run, destination)
         metrics = run.metrics
-        p95 = "n/a" if metrics.action_age_p95_s is None else f"{metrics.action_age_p95_s:.3f}s"
+        p95 = (
+            "n/a"
+            if metrics.action_age_p95_s is None
+            else f"{metrics.action_age_p95_s:.3f}s"
+        )
         batch_distribution = dict(sorted(Counter(metrics.batch_sizes).items()))
         print(
             f"{run.config.scheduler:15} {metrics.useful_actions:7d}  "
@@ -206,10 +225,7 @@ def _scheduler_filename(specification: str) -> str:
         label = f"{Path(path).stem}-{class_name}-{identity}"
     else:
         label = specification
-    return (
-        re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.")
-        or "scheduler"
-    )
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.") or "scheduler"
 
 
 def _libero(args: argparse.Namespace) -> int:
@@ -228,15 +244,14 @@ def _libero(args: argparse.Namespace) -> int:
         duration_s=args.duration,
         max_batch_size=args.max_batch_size,
         control_hz=args.control_hz,
+        scheduler_timeout_s=args.scheduler_timeout,
         episode_length=args.episode_length,
         execution_horizon=args.execution_horizon,
         seed=args.seed,
     )
     destination = write_system_artifact(artifact, args.output)
     system = artifact["metrics"]["system"]
-    failures = [
-        event for event in artifact["events"] if "failed" in event["kind"]
-    ]
+    failures = [event for event in artifact["events"] if "failed" in event["kind"]]
     print(
         f"actions: {system['useful_actions']}, "
         f"starvation: {system['starvation_frequency']:.1%}, "
@@ -291,6 +306,12 @@ def _run(argv: list[str] | None = None) -> int:
 def main(argv: list[str] | None = None) -> int:
     try:
         return _run(argv)
-    except (FileNotFoundError, ImportError, KeyError, RuntimeError, ValueError) as error:
+    except (
+        FileNotFoundError,
+        ImportError,
+        KeyError,
+        RuntimeError,
+        ValueError,
+    ) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2

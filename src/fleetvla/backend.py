@@ -24,6 +24,7 @@ class SyntheticBackend:
         chunk_sizes: Mapping[str, int] | None = None,
         base_latency_s: float = 0.02,
         per_item_latency_s: float = 0.005,
+        batch_latency_s: tuple[float, ...] = (),
         action_factory: Callable[[Observation, int], Any] | None = None,
     ) -> None:
         if chunk_size <= 0:
@@ -32,14 +33,18 @@ class SyntheticBackend:
         self.chunk_sizes = dict(chunk_sizes or {})
         if any(size <= 0 for size in self.chunk_sizes.values()):
             raise ValueError("chunk sizes must be positive")
-        self.cost_model = InferenceCostModel(base_latency_s, per_item_latency_s)
+        self.cost_model = InferenceCostModel(
+            base_latency_s, per_item_latency_s, batch_latency_s
+        )
         self._action_factory = action_factory or self._default_action
 
     @staticmethod
     def _default_action(observation: Observation, index: int) -> dict[str, Any]:
         return {"observation": observation.sequence, "step": index}
 
-    def infer(self, observations: Iterable[Observation], started_at_s: float) -> BackendResult:
+    def infer(
+        self, observations: Iterable[Observation], started_at_s: float
+    ) -> BackendResult:
         batch = tuple(observations)
         if not batch:
             raise ValueError("cannot infer an empty batch")

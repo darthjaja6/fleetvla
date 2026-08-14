@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import Mapping
 from typing import Any
 
 from .backend import BackendResult
@@ -16,8 +15,15 @@ from .endpoints import (
     validate_observation,
 )
 from .runtime import FleetRuntime
-from .schedulers import Scheduler
-from .types import ActionChunk, Observation
+from .scheduler_execution import SchedulerExecutionError, SchedulerRunner
+from .schedulers import EDFScheduler, Scheduler
+from .types import (
+    ActionChunk,
+    FleetSnapshot,
+    InferenceCostModel,
+    Observation,
+    ScheduleDecision,
+)
 
 
 class AsyncServingEngine:
@@ -31,6 +37,7 @@ class AsyncServingEngine:
         *,
         max_batch_size: int = 8,
         inference_timeout_s: float | None = None,
+        scheduler_timeout_s: float = 0.01,
     ) -> None:
         if not endpoints:
             raise ValueError("at least one endpoint is required")
@@ -46,15 +53,23 @@ class AsyncServingEngine:
         ):
             raise ValueError("inference_timeout_s must be positive")
         self.inference_timeout_s = inference_timeout_s
+        if not math.isfinite(scheduler_timeout_s) or scheduler_timeout_s <= 0:
+            raise ValueError("scheduler_timeout_s must be positive")
+        self.scheduler_timeout_s = scheduler_timeout_s
+        self._scheduler_runner: SchedulerRunner | None = None
+        self._fallback_scheduler = EDFScheduler()
+        self._using_scheduler_fallback = False
         self.clock = MonotonicClock()
         self.runtime = FleetRuntime(self.clock, max_batch_size=max_batch_size)
         for endpoint in endpoints:
             self.runtime.register(endpoint.session_config)
         self._running = False
         self._dispatch_task: asyncio.Task[None] | None = None
+        self._scheduler_task: asyncio.Task[None] | None = None
         self._quarantined_backend_task: asyncio.Task[Any] | None = None
         self._dispatch_not_before_s: float | None = None
         self._deferred_ready: tuple[tuple[str, int | None], ...] | None = None
+        self._dispatch_deadline_s: float | None = None
 
     async def run(self, duration_s: float) -> tuple:
         if not math.isfinite(duration_s) or duration_s <= 0:
@@ -62,8 +77,11 @@ class AsyncServingEngine:
         if self._running:
             raise RuntimeError("serving engine is already running")
         self._running = True
+        self._scheduler_runner = SchedulerRunner(self.scheduler)
+        self._using_scheduler_fallback = False
         start_s = self.clock.now()
         end_s = start_s + duration_s
+        self._dispatch_deadline_s = end_s
         next_tick = {
             session_id: start_s + 1.0 / endpoint.session_config.control_hz
             for session_id, endpoint in self.endpoints.items()
@@ -80,9 +98,9 @@ class AsyncServingEngine:
                     if now_s >= end_s:
                         break
                     if now_s >= due_s:
-                        period_s = 1.0 / self.endpoints[
-                            session_id
-                        ].session_config.control_hz
+                        period_s = (
+                            1.0 / self.endpoints[session_id].session_config.control_hz
+                        )
                         missed = math.floor((now_s - due_s) / period_s)
                         if missed:
                             self._record_missed_ticks(session_id, missed)
@@ -95,15 +113,21 @@ class AsyncServingEngine:
                 await asyncio.sleep(min(sleep_s, 0.005))
             for session_id, due_s in next_tick.items():
                 if due_s <= end_s:
-                    period_s = 1.0 / self.endpoints[
-                        session_id
-                    ].session_config.control_hz
+                    period_s = (
+                        1.0 / self.endpoints[session_id].session_config.control_hz
+                    )
                     missed = math.floor((end_s - due_s) / period_s) + 1
                     self._record_missed_ticks(session_id, missed)
+            if self._scheduler_task is not None:
+                await self._scheduler_task
             if self._dispatch_task is not None:
                 await self._dispatch_task
             return self.runtime.events.events
         finally:
+            if self._scheduler_runner is not None:
+                self._scheduler_runner.close()
+                self._scheduler_runner = None
+            self._dispatch_deadline_s = None
             self._running = False
 
     def _observe(self, session_id: str) -> None:
@@ -179,10 +203,7 @@ class AsyncServingEngine:
             for session in self.runtime.snapshot().sessions
             if session.session_id == session_id
         )
-        if (
-            snapshot.buffer_horizon_s
-            <= endpoint.session_config.request_threshold_s
-        ):
+        if snapshot.buffer_horizon_s <= endpoint.session_config.request_threshold_s:
             self._observe(session_id)
 
     def _record_missed_ticks(self, session_id: str, count: int) -> None:
@@ -207,6 +228,13 @@ class AsyncServingEngine:
             self._dispatch_task = None
             if exception is not None:
                 raise exception
+        if self._scheduler_task is not None and not self._scheduler_task.done():
+            return
+        if self._scheduler_task is not None:
+            exception = self._scheduler_task.exception()
+            self._scheduler_task = None
+            if exception is not None:
+                raise exception
         snapshot = self.runtime.snapshot()
         if not snapshot.ready_sessions:
             self._dispatch_not_before_s = None
@@ -223,10 +251,100 @@ class AsyncServingEngine:
         ):
             return
         costs = self.backend.cost_model
-        decision = self.scheduler.schedule(snapshot, costs)
+        if self._using_scheduler_fallback:
+            decision = self._fallback_scheduler.schedule(snapshot, costs)
+            self._apply_decision(snapshot, costs, decision, 0.0, fallback=True)
+            return
+        self._scheduler_task = asyncio.create_task(
+            self._schedule_and_dispatch(snapshot, costs)
+        )
+
+    async def _schedule_and_dispatch(
+        self, snapshot: FleetSnapshot, costs: InferenceCostModel
+    ) -> None:
+        fallback = False
+        try:
+            if self._scheduler_runner is None:
+                raise RuntimeError("scheduler runner is not active")
+            result = await self._scheduler_runner.decide(
+                snapshot, costs, self.scheduler_timeout_s
+            )
+            decision = result.decision
+            latency_s = result.latency_s
+        except SchedulerExecutionError as error:
+            if (
+                self._dispatch_deadline_s is None
+                or self.clock.now() >= self._dispatch_deadline_s
+            ):
+                return
+            fallback = True
+            self._using_scheduler_fallback = True
+            latency_s = self.scheduler_timeout_s
+            self.runtime.events.append(
+                self.clock.now(),
+                "scheduler_failed",
+                error=str(error),
+                fallback="edf",
+            )
+            decision = self._fallback_scheduler.schedule(snapshot, costs)
+        if (
+            self._dispatch_deadline_s is None
+            or self.clock.now() >= self._dispatch_deadline_s
+            or self._ready_identity(self.runtime.snapshot())
+            != self._ready_identity(snapshot)
+        ):
+            return
+        try:
+            self._apply_decision(
+                snapshot, costs, decision, latency_s, fallback=fallback
+            )
+        except Exception as error:
+            if fallback:
+                raise
+            self._using_scheduler_fallback = True
+            self.runtime.events.append(
+                self.clock.now(),
+                "scheduler_failed",
+                error=f"invalid decision: {error}",
+                fallback="edf",
+            )
+            fallback_decision = self._fallback_scheduler.schedule(snapshot, costs)
+            self._apply_decision(
+                snapshot, costs, fallback_decision, latency_s, fallback=True
+            )
+
+    @staticmethod
+    def _ready_identity(
+        snapshot: FleetSnapshot,
+    ) -> tuple[tuple[str, int, int | None], ...]:
+        return tuple(
+            (session.session_id, session.generation, session.ready_sequence)
+            for session in snapshot.ready_sessions
+        )
+
+    def _apply_decision(
+        self,
+        snapshot: FleetSnapshot,
+        costs: InferenceCostModel,
+        decision: ScheduleDecision,
+        latency_s: float,
+        *,
+        fallback: bool,
+    ) -> None:
+        self._validate_decision(snapshot, decision)
+        ready = tuple(
+            (session.session_id, session.ready_sequence)
+            for session in snapshot.ready_sessions
+        )
+        self.runtime.events.append(
+            self.clock.now(),
+            "scheduler_decision",
+            latency_s=latency_s,
+            selected_session_ids=decision.session_ids,
+            deferred=decision.defer_until_s is not None,
+            fallback=fallback,
+        )
         if decision.defer_until_s is not None:
-            if decision.defer_until_s <= self.clock.now():
-                raise ValueError("scheduler deferral must be in the future")
             self._dispatch_not_before_s = decision.defer_until_s
             self._deferred_ready = ready
             self.runtime.events.append(
@@ -245,6 +363,7 @@ class AsyncServingEngine:
             batch_size=len(batch),
             base_latency_s=costs.base_latency_s,
             per_item_latency_s=costs.per_item_latency_s,
+            batch_latency_s=costs.batch_latency_s,
             estimated_latency_s=costs.estimate(len(batch)),
         )
         prepare_batch = getattr(self.backend, "prepare_batch", None)
@@ -253,9 +372,24 @@ class AsyncServingEngine:
         except Exception as error:
             self._handle_batch_failure(batch, error, phase="prepare")
             return
-        self._dispatch_task = asyncio.create_task(
-            self._infer(batch, backend_request)
-        )
+        self._dispatch_task = asyncio.create_task(self._infer(batch, backend_request))
+
+    def _validate_decision(
+        self, snapshot: FleetSnapshot, decision: ScheduleDecision
+    ) -> None:
+        if not isinstance(decision, ScheduleDecision):
+            raise TypeError("scheduler must return a ScheduleDecision")
+        if decision.defer_until_s is not None:
+            if decision.defer_until_s <= self.clock.now():
+                raise ValueError("scheduler deferral must be in the future")
+            return
+        if not decision.session_ids:
+            raise ValueError("scheduler returned an empty batch")
+        if len(decision.session_ids) > snapshot.max_batch_size:
+            raise ValueError("scheduler exceeded max_batch_size")
+        ready = {session.session_id for session in snapshot.ready_sessions}
+        if not set(decision.session_ids) <= ready:
+            raise ValueError("scheduler selected a session that is not ready")
 
     async def _infer(self, batch: tuple, backend_request: Any) -> None:
         started_at_s = self.clock.now()
@@ -265,13 +399,9 @@ class AsyncServingEngine:
         infer_async = getattr(self.backend, "infer_async", None)
         try:
             if infer_async is not None:
-                worker = asyncio.create_task(
-                    infer_async(backend_request, started_at_s)
-                )
+                worker = asyncio.create_task(infer_async(backend_request, started_at_s))
             else:
-                infer = getattr(
-                    self.backend, "infer_prepared", self.backend.infer
-                )
+                infer = getattr(self.backend, "infer_prepared", self.backend.infer)
                 worker = asyncio.create_task(
                     asyncio.to_thread(infer, backend_request, started_at_s)
                 )
@@ -438,6 +568,9 @@ class AsyncServingEngine:
                 self._disconnect(session_id)
 
     def close(self) -> None:
+        if self._scheduler_runner is not None:
+            self._scheduler_runner.close()
+            self._scheduler_runner = None
         for session_id in self.endpoints:
             self._disconnect(session_id)
 
@@ -459,6 +592,7 @@ def serving_metrics(events: tuple, endpoints: list[Endpoint], duration_s: float)
             request_threshold_s=endpoint.session_config.request_threshold_s,
             network_latency_s=endpoint.session_config.network_latency_s,
             latency_budget_s=endpoint.session_config.latency_budget_s,
+            service_weight=endpoint.session_config.service_weight,
         )
         for endpoint in endpoints
     ]

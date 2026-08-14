@@ -3,8 +3,8 @@ import math
 import pytest
 
 from fleetvla import (
-    ActionCommand,
     ActionChunk,
+    ActionCommand,
     FleetRuntime,
     ScheduleDecision,
     SessionConfig,
@@ -97,7 +97,7 @@ def test_action_acknowledgements_reject_duplicates_and_stale_generations() -> No
     clock = VirtualClock()
     runtime = FleetRuntime(clock)
     runtime.register(SessionConfig("arm", control_hz=10, chunk_size=1))
-    observation = runtime.observe("arm")
+    runtime.observe("arm")
     runtime.prepare_batch(ScheduleDecision(("arm",)))
     runtime.accept(ActionChunk("arm", 0, 0, (1,), clock.now()))
     command = runtime.dequeue_action("arm")
@@ -126,9 +126,7 @@ def test_session_and_cost_timing_must_be_finite(value) -> None:
     with pytest.raises(ValueError):
         SessionConfig("arm", control_hz=value, chunk_size=1)
     with pytest.raises(ValueError):
-        SessionConfig(
-            "arm", control_hz=10, chunk_size=1, network_latency_s=value
-        )
+        SessionConfig("arm", control_hz=10, chunk_size=1, network_latency_s=value)
     from fleetvla import InferenceCostModel
 
     with pytest.raises(ValueError):
