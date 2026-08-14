@@ -51,8 +51,11 @@ checkout:
 
 ```bash
 mkdir -p .tools .uv-cache .uv-python
-curl -LsSf https://astral.sh/uv/install.sh | \
-  env UV_UNMANAGED_INSTALL="$PWD/.tools" sh
+curl -LsSf https://astral.sh/uv/0.12.4/install.sh \
+  -o .tools/uv-install.sh
+echo 'f1ee4a249799525a330df57643335120150c9102db7483b1d37546cc43af3a16  .tools/uv-install.sh' \
+  | sha256sum -c -
+env UV_UNMANAGED_INSTALL="$PWD/.tools" sh .tools/uv-install.sh
 UV_CACHE_DIR="$PWD/.uv-cache" \
 UV_PYTHON_INSTALL_DIR="$PWD/.uv-python" \
   .tools/uv venv --seed --clear .venv
@@ -60,9 +63,10 @@ UV_PYTHON_INSTALL_DIR="$PWD/.uv-python" \
 python -m pip install -e .
 ```
 
-The installer requires network access and `curl`; use your distribution's
-packaged `uv` instead when available. `--seed` installs pip, and `--clear`
-replaces the partial environment left by a failed `python3 -m venv` attempt.
+The pinned installer requires network access, `curl`, and `sha256sum`; use your
+distribution's packaged `uv` instead when available. Update the version, URL,
+and expected checksum together. `--seed` installs pip, and `--clear` replaces
+the partial environment left by a failed `python3 -m venv` attempt.
 
 ## Lifecycle in concrete terms
 

@@ -24,6 +24,8 @@ from .benchmark import (
 from .schedulers import check_scheduler, create_scheduler, registry
 from .simulation import FleetSimulator, RobotSpec
 
+_SCHEDULER_COLUMN_WIDTH = 32
+
 
 def _demo(duration_s: float) -> int:
     result = FleetSimulator(
@@ -203,7 +205,10 @@ def _benchmark(args: argparse.Namespace) -> int:
             )
             for run in runs
         ]
-    print("scheduler       actions  starvation  p95 age  fairness  batches")
+    print(
+        f"{'scheduler':<{_SCHEDULER_COLUMN_WIDTH}} actions  "
+        "starvation  p95 age  fairness  batches"
+    )
     for run, destination in zip(runs, destinations):
         write_artifact(run, destination)
         metrics = run.metrics
@@ -213,8 +218,10 @@ def _benchmark(args: argparse.Namespace) -> int:
             else f"{metrics.action_age_p95_s:.3f}s"
         )
         batch_distribution = dict(sorted(Counter(metrics.batch_sizes).items()))
+        scheduler_label = _scheduler_display_name(run.config.scheduler)
         print(
-            f"{run.config.scheduler:15} {metrics.useful_actions:7d}  "
+            f"{scheduler_label:<{_SCHEDULER_COLUMN_WIDTH}} "
+            f"{metrics.useful_actions:7d}  "
             f"{metrics.starvation_frequency:10.1%}  {p95:>7}  "
             f"{metrics.fairness:8.3f}  {batch_distribution}"
         )
@@ -232,6 +239,17 @@ def _scheduler_filename(specification: str) -> str:
     else:
         label = specification
     return re.sub(r"[^A-Za-z0-9._-]+", "-", label).strip("-.") or "scheduler"
+
+
+def _scheduler_display_name(specification: str) -> str:
+    if ":" in specification:
+        path, class_name = specification.rsplit(":", 1)
+        label = f"{Path(path).name}:{class_name}"
+    else:
+        label = specification
+    if len(label) > _SCHEDULER_COLUMN_WIDTH:
+        return label[: _SCHEDULER_COLUMN_WIDTH - 3] + "..."
+    return label
 
 
 def _libero(args: argparse.Namespace) -> int:

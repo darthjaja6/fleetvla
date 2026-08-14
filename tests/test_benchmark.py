@@ -1304,7 +1304,7 @@ def test_artifact_provenance_is_bound_to_executed_source(monkeypatch, tmp_path) 
     )
 
 
-def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path) -> None:
+def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path, capsys) -> None:
     scheduler_path = tmp_path / "custom scheduler.py"
     scheduler_path.write_text(
         "from fleetvla import ScheduleDecision\n"
@@ -1339,6 +1339,40 @@ def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path) -> None:
     assert next(iter(local_names)).startswith(
         "heterogeneous-two-arm-custom-scheduler-Custom-"
     )
+    output_text = capsys.readouterr().out
+    assert "custom scheduler.py:Custom" in output_text
+    assert str(scheduler_path) not in output_text
+
+
+def test_benchmark_table_bounds_long_scheduler_labels(tmp_path, capsys) -> None:
+    scheduler_path = tmp_path / ("long-scheduler-name-" * 3 + ".py")
+    scheduler_path.write_text(
+        "from fleetvla import ScheduleDecision\n"
+        "class LongSchedulerClassName:\n"
+        "    def schedule(self, fleet, costs):\n"
+        "        return ScheduleDecision(tuple(s.session_id for s in "
+        "fleet.ready_sessions[:fleet.max_batch_size]))\n"
+    )
+
+    assert (
+        main(
+            [
+                "benchmark",
+                "--duration",
+                "0.1",
+                "--scheduler",
+                f"{scheduler_path}:LongSchedulerClassName",
+                "--output",
+                str(tmp_path / "result.json"),
+            ]
+        )
+        == 0
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    table_row = lines[1]
+    assert table_row[:32].endswith("...")
+    assert table_row[32] == " "
 
 
 def test_benchmark_and_trace_times_must_be_finite() -> None:
