@@ -6,6 +6,7 @@ import asyncio
 import json
 import math
 import socket
+import ssl
 import threading
 import time
 from collections.abc import Callable, Mapping
@@ -86,7 +87,7 @@ class RemoteEndpoint:
         self._action_converter = action_converter
         self._safe_action = safe_action
         self._action_validator = action_validator or _finite_value
-        self._acknowledgement_timeout_s = acknowledgement_timeout_s
+        self.acknowledgement_timeout_s = acknowledgement_timeout_s
         self._closed = False
 
     def observe(self) -> Mapping[str, Any]:
@@ -116,7 +117,7 @@ class RemoteEndpoint:
             self.transport.send_action,
             command,
             converted,
-            self._acknowledgement_timeout_s,
+            self.acknowledgement_timeout_s,
         )
 
     def fallback(self) -> None:
@@ -159,14 +160,20 @@ class JsonlSocketTransport:
         *,
         admission_timeout_s: float = 2.0,
         reconnect_address: tuple[str, int] | None = None,
+        ssl_context: ssl.SSLContext | None = None,
+        server_hostname: str | None = None,
     ) -> None:
         if not session_id:
             raise ValueError("remote session_id must not be empty")
         if not math.isfinite(admission_timeout_s) or admission_timeout_s <= 0:
             raise ValueError("admission_timeout_s must be positive")
+        if ssl_context is None and server_hostname is not None:
+            raise ValueError("server_hostname requires an SSL context")
         self.session_id = session_id
         self._admission_timeout_s = admission_timeout_s
         self._reconnect_address = reconnect_address
+        self._ssl_context = ssl_context
+        self._server_hostname = server_hostname
         self._connection = connection
         self._reader: Any = None
         self._write_lock = threading.Lock()
@@ -192,14 +199,26 @@ class JsonlSocketTransport:
         session_id: str,
         *,
         admission_timeout_s: float = 2.0,
+        ssl_context: ssl.SSLContext | None = None,
+        server_hostname: str | None = None,
     ) -> "JsonlSocketTransport":
         address = (host, port)
-        connection = socket.create_connection(address, timeout=admission_timeout_s)
+        if ssl_context is None and server_hostname is not None:
+            raise ValueError("server_hostname requires an SSL context")
+        tls_hostname = (server_hostname or host) if ssl_context is not None else None
+        connection = cls._connect_socket(
+            address,
+            admission_timeout_s,
+            ssl_context,
+            tls_hostname,
+        )
         return cls(
             connection,
             session_id,
             admission_timeout_s=admission_timeout_s,
             reconnect_address=address,
+            ssl_context=ssl_context,
+            server_hostname=tls_hostname,
         )
 
     def receive_observation(self) -> Mapping[str, Any]:
@@ -274,8 +293,11 @@ class JsonlSocketTransport:
             raise RuntimeError("remote transport is already connected")
         if self._reconnect_address is None:
             raise RuntimeError("this socket transport cannot reconnect")
-        self._connection = socket.create_connection(
-            self._reconnect_address, timeout=self._admission_timeout_s
+        self._connection = self._connect_socket(
+            self._reconnect_address,
+            self._admission_timeout_s,
+            self._ssl_context,
+            self._server_hostname,
         )
         with self._state_lock:
             self._latest = None
@@ -287,6 +309,22 @@ class JsonlSocketTransport:
             self._admit_and_start()
         except BaseException:
             self._close_connection()
+            raise
+
+    @staticmethod
+    def _connect_socket(
+        address: tuple[str, int],
+        timeout_s: float,
+        ssl_context: ssl.SSLContext | None,
+        server_hostname: str | None,
+    ) -> socket.socket:
+        connection = socket.create_connection(address, timeout=timeout_s)
+        if ssl_context is None:
+            return connection
+        try:
+            return ssl_context.wrap_socket(connection, server_hostname=server_hostname)
+        except BaseException:
+            connection.close()
             raise
 
     def _admit_and_start(self) -> None:

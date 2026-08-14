@@ -12,3 +12,7 @@ Checksums detect modification but do not establish who created a file.
 FleetVLA is research infrastructure, not a certified safety system. Physical
 deployments require independent local limits, watchdogs, fallbacks, emergency
 stops, and platform-specific validation.
+
+The JSON-lines remote transport supports certificate-verified TLS and mTLS when
+the caller supplies an `ssl.SSLContext`. Plain TCP remains available for local
+development; do not use it across an untrusted network.

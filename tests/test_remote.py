@@ -1,6 +1,8 @@
 import asyncio
 import json
+import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import threading
@@ -271,27 +273,214 @@ def test_remote_acceptance_survives_terminal_acknowledgement_timeout() -> None:
         JsonlSocketTransport(client, "arm"),
         SessionConfig("arm", control_hz=50, chunk_size=1),
         safe_action=lambda: 0,
-        acknowledgement_timeout_s=0.01,
     )
     engine = AsyncServingEngine(
         [endpoint],
         SyntheticBackend(chunk_size=1, base_latency_s=0, per_item_latency_s=0),
         FIFOScheduler(),
-        endpoint_timeout_s=0.05,
     )
 
     async def run_and_close() -> tuple:
         try:
-            return await engine.run(0.08)
+            return await engine.run(0.14)
         finally:
             await engine.aclose()
 
     events = asyncio.run(run_and_close())
     thread.join(timeout=1)
-    metrics = serving_metrics(events, [endpoint], 0.08)
+    metrics = serving_metrics(events, [endpoint], 0.14)
 
     assert not thread.is_alive()
     assert metrics.sent_actions == 1
     assert metrics.accepted_actions == 1
     assert metrics.useful_actions == 0
     assert any(event.kind == "session_disconnected" for event in events)
+    failures = [
+        event.details["error"]
+        for event in events
+        if event.kind == "endpoint_action_failed"
+    ]
+    assert failures and failures[0]
+
+
+def test_remote_acknowledgement_timeout_must_fit_endpoint_timeout() -> None:
+    client, server = socket.socketpair()
+    _send(server, {"type": "hello", "protocol_version": 2, "session_id": "arm"})
+    endpoint = RemoteEndpoint(
+        JsonlSocketTransport(client, "arm"),
+        SessionConfig("arm", control_hz=20, chunk_size=1),
+        safe_action=lambda: 0,
+    )
+
+    with pytest.raises(ValueError, match="must exceed"):
+        AsyncServingEngine(
+            [endpoint],
+            SyntheticBackend(chunk_size=1),
+            FIFOScheduler(),
+            endpoint_timeout_s=0.1,
+        )
+
+    endpoint.close()
+    server.close()
+
+
+@pytest.fixture(scope="module")
+def tls_material(tmp_path_factory):
+    openssl = shutil.which("openssl")
+    if openssl is None:
+        pytest.skip("TLS integration tests require the OpenSSL command")
+    directory = tmp_path_factory.mktemp("tls")
+    certificate = directory / "localhost.pem"
+    private_key = directory / "localhost.key"
+    subprocess.run(
+        [
+            openssl,
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-keyout",
+            str(private_key),
+            "-out",
+            str(certificate),
+            "-sha256",
+            "-days",
+            "1",
+            "-nodes",
+            "-subj",
+            "/CN=localhost",
+            "-addext",
+            "subjectAltName=DNS:localhost",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return certificate, private_key
+
+
+def _server_tls_context(tls_material, *, require_client=False) -> ssl.SSLContext:
+    certificate, private_key = tls_material
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certificate, private_key)
+    if require_client:
+        context.load_verify_locations(certificate)
+        context.verify_mode = ssl.CERT_REQUIRED
+    return context
+
+
+def _client_tls_context(tls_material, *, client_certificate=False) -> ssl.SSLContext:
+    certificate, private_key = tls_material
+    context = ssl.create_default_context(cafile=str(certificate))
+    if client_certificate:
+        context.load_cert_chain(certificate, private_key)
+    return context
+
+
+def test_jsonl_transport_supports_mtls_and_reconnect(tls_material) -> None:
+    received = []
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(2)
+        host, port = listener.getsockname()
+        server_context = _server_tls_context(tls_material, require_client=True)
+
+        def robot() -> None:
+            for _ in range(2):
+                raw, _ = listener.accept()
+                with server_context.wrap_socket(raw, server_side=True) as connection:
+                    _send(
+                        connection,
+                        {
+                            "type": "hello",
+                            "protocol_version": 2,
+                            "session_id": "arm",
+                        },
+                    )
+                    reader = connection.makefile("r", encoding="utf-8")
+                    for line in reader:
+                        message = json.loads(line)
+                        received.append(message["type"])
+                        if message["type"] == "close":
+                            break
+                    reader.close()
+
+        thread = threading.Thread(target=robot)
+        thread.start()
+        transport = JsonlSocketTransport.connect(
+            host,
+            port,
+            "arm",
+            ssl_context=_client_tls_context(tls_material, client_certificate=True),
+            server_hostname="localhost",
+        )
+        transport.send_fallback(0)
+        transport.close()
+        transport.reconnect()
+        transport.close()
+        thread.join(timeout=2)
+
+    assert not thread.is_alive()
+    assert received == ["fallback", "close", "close"]
+
+
+def test_jsonl_tls_rejects_untrusted_certificate(tls_material) -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        host, port = listener.getsockname()
+        server_context = _server_tls_context(tls_material)
+
+        def robot() -> None:
+            raw, _ = listener.accept()
+            try:
+                server_context.wrap_socket(raw, server_side=True)
+            except ssl.SSLError:
+                raw.close()
+
+        thread = threading.Thread(target=robot)
+        thread.start()
+        with pytest.raises(ssl.SSLCertVerificationError):
+            JsonlSocketTransport.connect(
+                host,
+                port,
+                "arm",
+                ssl_context=ssl.create_default_context(),
+                server_hostname="localhost",
+            )
+        thread.join(timeout=2)
+
+    assert not thread.is_alive()
+
+
+def test_jsonl_tls_still_enforces_session_admission(tls_material) -> None:
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(1)
+        host, port = listener.getsockname()
+        server_context = _server_tls_context(tls_material)
+
+        def robot() -> None:
+            raw, _ = listener.accept()
+            with server_context.wrap_socket(raw, server_side=True) as connection:
+                _send(
+                    connection,
+                    {
+                        "type": "hello",
+                        "protocol_version": 2,
+                        "session_id": "alien",
+                    },
+                )
+
+        thread = threading.Thread(target=robot)
+        thread.start()
+        with pytest.raises(ValueError, match="admission"):
+            JsonlSocketTransport.connect(
+                host,
+                port,
+                "arm",
+                ssl_context=_client_tls_context(tls_material),
+                server_hostname="localhost",
+            )
+        thread.join(timeout=2)
+
+    assert not thread.is_alive()

@@ -40,7 +40,7 @@ class AsyncServingEngine:
         max_batch_size: int = 8,
         inference_timeout_s: float | None = None,
         scheduler_timeout_s: float = 0.01,
-        endpoint_timeout_s: float = 0.1,
+        endpoint_timeout_s: float = 0.2,
         action_execution: str = "sequential-buffer",
     ) -> None:
         if not endpoints:
@@ -62,6 +62,18 @@ class AsyncServingEngine:
         self.scheduler_timeout_s = scheduler_timeout_s
         if not math.isfinite(endpoint_timeout_s) or endpoint_timeout_s <= 0:
             raise ValueError("endpoint_timeout_s must be positive")
+        for endpoint in endpoints:
+            acknowledgement_timeout_s = getattr(
+                endpoint, "acknowledgement_timeout_s", None
+            )
+            if (
+                acknowledgement_timeout_s is not None
+                and endpoint_timeout_s <= acknowledgement_timeout_s
+            ):
+                raise ValueError(
+                    "endpoint_timeout_s must exceed the remote "
+                    "acknowledgement_timeout_s"
+                )
         self.endpoint_timeout_s = endpoint_timeout_s
         self._scheduler_runner: SchedulerRunner | None = None
         self._fallback_scheduler = EDFScheduler()

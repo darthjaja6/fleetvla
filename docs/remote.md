@@ -67,6 +67,9 @@ acknowledgements fail the endpoint. FleetVLA counts an action as useful only
 after `executed`; TCP delivery alone is never robot execution. Configure the
 ACK bound with `RemoteEndpoint(..., acknowledgement_timeout_s=...)` and the
 total callback bound with `AsyncServingEngine(..., endpoint_timeout_s=...)`.
+The total endpoint bound must be strictly greater than the ACK bound so the
+transport can preserve an accepted transition before reporting terminal
+timeout; construction rejects an invalid pair.
 If terminal acknowledgement fails after `accepted`, FleetVLA preserves that
 acceptance in delivery metrics while still rejecting the action as useful and
 disconnecting the session.
@@ -77,9 +80,23 @@ JSON objects separated by `\n`; duplicate or backward observation sequences
 close the usable stream. `RemoteEndpoint` validates observations and outbound
 actions using the same schemas and callbacks as local endpoints.
 
-TCP delivery does not provide authentication, encryption, a robot-side
-deadline watchdog, or emergency stop. Put the connection behind an authenticated tunnel where
-needed, and keep joint limits, liveliness, fallback, and stop authority in the
-robot process. The public `RemoteTransport` protocol allows a deployment to
-replace JSON-lines with a site-specific authenticated transport without
-changing the scheduler or serving engine.
+For authenticated encryption, pass a client `ssl.SSLContext` to `connect`.
+Standard certificate verification and hostname checks remain enabled; loading a
+client certificate on the context enables mTLS when the robot server requires
+it:
+
+```python
+import ssl
+
+context = ssl.create_default_context(cafile="fleet-ca.pem")
+context.load_cert_chain("serving-client.pem", "serving-client-key.pem")
+transport = JsonlSocketTransport.connect(
+    "robot-1.local", 7447, "arm-1", ssl_context=context
+)
+```
+
+TLS does not provide a robot-side deadline watchdog, joint limits, or emergency
+stop. Keep liveliness, fallback, and stop authority in the robot process. The
+public `RemoteTransport` protocol also allows a deployment to replace
+JSON-lines with a site-specific transport without changing the scheduler or
+serving engine.
