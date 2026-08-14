@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..benchmark import fleetvla_source_sha256
+from ..runtime import ACTION_EXECUTION_POLICIES
 from ..schedulers import create_scheduler
 from ..serving import AsyncServingEngine, serving_metrics
 from ..types import SessionConfig
@@ -35,6 +36,7 @@ def run_smolvla_libero(
     control_hz: float = 20,
     episode_length: int = 100,
     execution_horizon: int | None = None,
+    action_execution: str = "sequential-buffer",
     seed: int = 0,
     scheduler_timeout_s: float = 0.01,
 ) -> dict[str, Any]:
@@ -50,6 +52,8 @@ def run_smolvla_libero(
         raise ValueError("control_hz must be finite and positive")
     if execution_horizon is not None and execution_horizon <= 0:
         raise ValueError("execution_horizon must be positive")
+    if action_execution not in ACTION_EXECUTION_POLICIES:
+        raise ValueError("unsupported action execution policy")
     if not math.isfinite(scheduler_timeout_s) or scheduler_timeout_s <= 0:
         raise ValueError("scheduler timeout must be finite and positive")
 
@@ -145,6 +149,7 @@ def run_smolvla_libero(
             max_batch_size=max_batch_size,
             inference_timeout_s=max(10.0, duration_s),
             scheduler_timeout_s=scheduler_timeout_s,
+            action_execution=action_execution,
         )
     except Exception:
         _close_environments(environments)
@@ -192,7 +197,7 @@ def run_smolvla_libero(
             "execution_horizon": (
                 backend.execution_horizon or int(backend.policy.config.chunk_size)
             ),
-            "action_execution": "sequential-buffer",
+            "action_execution": action_execution,
             "episode_length": episode_length,
             "seed": seed,
         },

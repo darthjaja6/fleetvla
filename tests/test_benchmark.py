@@ -22,6 +22,48 @@ from fleetvla.benchmark import (
 from fleetvla.cli import main
 
 
+@pytest.mark.parametrize("action_execution", ["sequential-buffer", "latest-indexed"])
+def test_libero_cli_forwards_action_execution(
+    monkeypatch, tmp_path, action_execution
+) -> None:
+    captured = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {
+            "metrics": {
+                "system": {
+                    "useful_actions": 0,
+                    "starvation_frequency": 1.0,
+                    "batch_sizes": [],
+                }
+            },
+            "events": [],
+        }
+
+    monkeypatch.setattr(
+        "fleetvla.integrations.libero_benchmark.run_smolvla_libero", fake_run
+    )
+    monkeypatch.setattr(
+        "fleetvla.integrations.libero_benchmark.write_system_artifact",
+        lambda artifact, path: Path(path),
+    )
+
+    assert (
+        main(
+            [
+                "libero",
+                "--action-execution",
+                action_execution,
+                "--output",
+                str(tmp_path / "result.json"),
+            ]
+        )
+        == 0
+    )
+    assert captured["action_execution"] == action_execution
+
+
 def _seal_artifact(body):
     body["sha256"] = hashlib.sha256(
         json.dumps(body, sort_keys=True, separators=(",", ":")).encode()

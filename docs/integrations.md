@@ -81,7 +81,11 @@ scheduler snapshot.
 When a slot terminates or truncates, its endpoint reports an episode boundary
 to the serving engine. The engine acknowledges the final action, increments the
 session generation, discards the remainder of the old chunk, clears opaque
-policy state, and observes the reset episode. For LIBERO's four-value API,
+policy state before the next inference batch, and observes the reset episode.
+`LeRobotPolicyBackend` requires a resettable policy and treats its caches as
+batch-local: the first inference and every inference after a session reset call
+`policy.reset()`. Use `StatefulPolicyBackend` when a model needs genuinely
+per-session recurrent state. For LIBERO's four-value API,
 `done` is task success. For LeRobot's five-value LIBERO API, task success comes
 from `info["is_success"]` (`success` is accepted as a compatibility alias);
 termination and truncation are recorded separately and are not inferred to be
@@ -108,6 +112,7 @@ engine = AsyncServingEngine(
     create_scheduler("adaptive-slack"),
     max_batch_size=2,
     scheduler_timeout_s=0.01,
+    action_execution="latest-indexed",
 )
 events = asyncio.run(engine.run(30.0))
 system_metrics = serving_metrics(events, adapter.endpoints, 30.0)

@@ -1,4 +1,4 @@
-"""Print the pinned Armory L=1 fixture used by FleetVLA's differential test."""
+"""Print the pinned Armory L=1 fixtures used by FleetVLA's differential test."""
 
 from __future__ import annotations
 
@@ -9,6 +9,64 @@ import sys
 from pathlib import Path
 
 ARMORY_COMMIT = "e876202ede99723f4be40d8d7cab31847bbd14a9"
+SCENARIOS = (
+    {
+        "name": "latest-indexed-prefix",
+        "latency_profile_s": [0.2],
+        "max_batch_size": 1,
+        "sessions": [
+            {
+                "session_id": "buffered",
+                "control_hz": 20.0,
+                "buffer_steps": 10,
+                "chunk_size": 10,
+                "service_weight": 1.0,
+            },
+            {
+                "session_id": "empty",
+                "control_hz": 20.0,
+                "buffer_steps": 0,
+                "chunk_size": 8,
+                "service_weight": 0.9,
+            },
+        ],
+    },
+    {
+        "name": "priority-tiers-batch-three",
+        "latency_profile_s": [0.073, 0.1098, 0.1424],
+        "max_batch_size": 3,
+        "sessions": [
+            {
+                "session_id": "priority-a",
+                "control_hz": 20.0,
+                "buffer_steps": 0,
+                "chunk_size": 6,
+                "service_weight": 2.0,
+            },
+            {
+                "session_id": "priority-b",
+                "control_hz": 20.0,
+                "buffer_steps": 0,
+                "chunk_size": 6,
+                "service_weight": 2.0,
+            },
+            {
+                "session_id": "regular-a",
+                "control_hz": 20.0,
+                "buffer_steps": 0,
+                "chunk_size": 10,
+                "service_weight": 1.0,
+            },
+            {
+                "session_id": "regular-b",
+                "control_hz": 20.0,
+                "buffer_steps": 0,
+                "chunk_size": 10,
+                "service_weight": 1.0,
+            },
+        ],
+    },
+)
 
 
 def main() -> None:
@@ -38,6 +96,10 @@ def main() -> None:
     from armory.serving.schemas import ActionChunk, SlotRequest
 
     class FixedLatency(LatencyTracker):
+        def __init__(self, profile):
+            super().__init__()
+            self.profile = profile
+
         def _update_measurement(self, values, key, value):
             del values, key, value
 
@@ -46,17 +108,16 @@ def main() -> None:
             return 0.0
 
         def infer_latency(self, batch_size):
-            del batch_size
-            return 0.2
+            return self.profile[batch_size - 1]
 
         def action_latency(self, robot_id):
             del robot_id
             return 0.0
 
-    def request(session_id, chunk_size, weight):
+    def request(session):
         return SlotRequest(
             0,
-            session_id,
+            session["session_id"],
             0,
             0.0,
             0,
@@ -64,49 +125,91 @@ def main() -> None:
             0.0,
             0.0,
             0,
-            chunk_size,
+            session["chunk_size"],
             InferType.SYNC,
             None,
             None,
-            20.0,
-            weight,
+            session["control_hz"],
+            session["service_weight"],
         )
 
-    mirror_module.time.time = lambda: 0.0
-    latency = FixedLatency()
-    mirror = Mirror(latency)
-    mirror.receive_request(request("buffered", 10, 1.0))
-    mirror.receive_request(request("empty", 8, 0.9))
-    mirror.robots["buffered"].queue_chunk(
-        ActionChunk(100, 0, 0, 0, 10, 0.0, 0, 0, "confirmed")
-    )
-    search = IncrementalSearch(mirror, latency, max_depth=1, max_batch_size=1)
-    candidates = []
-    for batch in search._candidate_batches(search.root_node):
-        node = search.root_node.get_twin()
-        chunk = node.queue_batch(
-            list(batch),
-            1,
-            origin="searched",
-            fast_forward=False,
-            dispatch_time=0.0,
-        )[0]
-        node.fast_forward(0.2)
-        evaluated = node.get_twin()
-        evaluated.fast_forward(HORIZON)
-        session_id = batch[0]
-        robot = evaluated.robots[session_id]
-        executed_time_s = robot.score / robot.control_hz
-        candidates.append(
-            {
-                "session_id": session_id,
-                "first_executed_index": chunk.first_executed_index,
-                "executed_time_s": round(executed_time_s, 10),
-                "objective": round(executed_time_s * robot.weight / 0.2, 10),
-            }
+    def evaluate(scenario):
+        latency = FixedLatency(scenario["latency_profile_s"])
+        mirror = Mirror(latency)
+        for index, session in enumerate(scenario["sessions"]):
+            mirror.receive_request(request(session))
+            if session["buffer_steps"]:
+                mirror.robots[session["session_id"]].queue_chunk(
+                    ActionChunk(
+                        100 + index,
+                        0,
+                        0,
+                        0,
+                        session["buffer_steps"],
+                        0.0,
+                        0,
+                        0,
+                        "confirmed",
+                    )
+                )
+        search = IncrementalSearch(
+            mirror,
+            latency,
+            max_depth=1,
+            max_batch_size=scenario["max_batch_size"],
         )
-    while not search.is_done():
-        search.step(32)
+        candidates = []
+        for batch in search._candidate_batches(search.root_node):
+            infer_s = latency.infer_latency(len(batch))
+            node = search.root_node.get_twin()
+            chunks = node.queue_batch(
+                list(batch),
+                1,
+                origin="searched",
+                fast_forward=False,
+                dispatch_time=0.0,
+            )
+            node.fast_forward(infer_s)
+            evaluated = node.get_twin()
+            evaluated.fast_forward(HORIZON)
+            executed = {
+                session_id: round(
+                    evaluated.robots[session_id].score
+                    / evaluated.robots[session_id].control_hz,
+                    10,
+                )
+                for session_id in batch
+            }
+            objective = (
+                sum(
+                    executed[session_id] * evaluated.robots[session_id].weight
+                    for session_id in batch
+                )
+                / infer_s
+            )
+            candidates.append(
+                {
+                    "batch": list(batch),
+                    "first_executed_indices": {
+                        session_id: chunk.first_executed_index
+                        for session_id, chunk in zip(batch, chunks)
+                    },
+                    "executed_time_s": executed,
+                    "objective": round(objective, 10),
+                }
+            )
+        while not search.is_done():
+            search.step(32)
+        return {
+            **scenario,
+            "evaluation_horizon_s": HORIZON,
+            "upstream_output": {
+                "candidates": candidates,
+                "selected_batch": list(search.best()[0]),
+            },
+        }
+
+    mirror_module.time.time = lambda: 0.0
     output = {
         "source": {
             "repository": "https://github.com/GaTech-RL2/armory",
@@ -116,31 +219,7 @@ def main() -> None:
                 "IncrementalSearch(max_depth=1)"
             ),
         },
-        "scenario": {
-            "evaluation_horizon_s": HORIZON,
-            "inference_latency_s": 0.2,
-            "max_batch_size": 1,
-            "sessions": [
-                {
-                    "session_id": "buffered",
-                    "control_hz": 20.0,
-                    "buffer_steps": 10,
-                    "chunk_size": 10,
-                    "service_weight": 1.0,
-                },
-                {
-                    "session_id": "empty",
-                    "control_hz": 20.0,
-                    "buffer_steps": 0,
-                    "chunk_size": 8,
-                    "service_weight": 0.9,
-                },
-            ],
-        },
-        "upstream_output": {
-            "candidates": sorted(candidates, key=lambda item: item["session_id"]),
-            "selected_batch": list(search.best()[0]),
-        },
+        "scenarios": [evaluate(scenario) for scenario in SCENARIOS],
     }
     print(json.dumps(output, indent=2))
 

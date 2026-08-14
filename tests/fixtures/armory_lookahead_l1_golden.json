@@ -4,42 +4,144 @@
     "commit": "e876202ede99723f4be40d8d7cab31847bbd14a9",
     "implementation": "src/armory/scheduling/lookahead_actions.py:IncrementalSearch(max_depth=1)"
   },
-  "scenario": {
-    "evaluation_horizon_s": 1.0,
-    "inference_latency_s": 0.2,
-    "max_batch_size": 1,
-    "sessions": [
-      {
-        "session_id": "buffered",
-        "control_hz": 20.0,
-        "buffer_steps": 10,
-        "chunk_size": 10,
-        "service_weight": 1.0
-      },
-      {
-        "session_id": "empty",
-        "control_hz": 20.0,
-        "buffer_steps": 0,
-        "chunk_size": 8,
-        "service_weight": 0.9
+  "scenarios": [
+    {
+      "name": "latest-indexed-prefix",
+      "latency_profile_s": [0.2],
+      "max_batch_size": 1,
+      "sessions": [
+        {
+          "session_id": "buffered",
+          "control_hz": 20.0,
+          "buffer_steps": 10,
+          "chunk_size": 10,
+          "service_weight": 1.0
+        },
+        {
+          "session_id": "empty",
+          "control_hz": 20.0,
+          "buffer_steps": 0,
+          "chunk_size": 8,
+          "service_weight": 0.9
+        }
+      ],
+      "evaluation_horizon_s": 1.0,
+      "upstream_output": {
+        "candidates": [
+          {
+            "batch": ["empty"],
+            "first_executed_indices": {"empty": 0},
+            "executed_time_s": {"empty": 0.4},
+            "objective": 1.8
+          },
+          {
+            "batch": ["buffered"],
+            "first_executed_indices": {"buffered": 3},
+            "executed_time_s": {"buffered": 0.35},
+            "objective": 1.75
+          }
+        ],
+        "selected_batch": ["empty"]
       }
-    ]
-  },
-  "upstream_output": {
-    "candidates": [
-      {
-        "session_id": "buffered",
-        "first_executed_index": 3,
-        "executed_time_s": 0.35,
-        "objective": 1.75
-      },
-      {
-        "session_id": "empty",
-        "first_executed_index": 0,
-        "executed_time_s": 0.4,
-        "objective": 1.8
+    },
+    {
+      "name": "priority-tiers-batch-three",
+      "latency_profile_s": [0.073, 0.1098, 0.1424],
+      "max_batch_size": 3,
+      "sessions": [
+        {
+          "session_id": "priority-a",
+          "control_hz": 20.0,
+          "buffer_steps": 0,
+          "chunk_size": 6,
+          "service_weight": 2.0
+        },
+        {
+          "session_id": "priority-b",
+          "control_hz": 20.0,
+          "buffer_steps": 0,
+          "chunk_size": 6,
+          "service_weight": 2.0
+        },
+        {
+          "session_id": "regular-a",
+          "control_hz": 20.0,
+          "buffer_steps": 0,
+          "chunk_size": 10,
+          "service_weight": 1.0
+        },
+        {
+          "session_id": "regular-b",
+          "control_hz": 20.0,
+          "buffer_steps": 0,
+          "chunk_size": 10,
+          "service_weight": 1.0
+        }
+      ],
+      "evaluation_horizon_s": 1.0,
+      "upstream_output": {
+        "candidates": [
+          {
+            "batch": ["regular-a"],
+            "first_executed_indices": {"regular-a": 0},
+            "executed_time_s": {"regular-a": 0.5},
+            "objective": 6.8493150685
+          },
+          {
+            "batch": ["priority-a"],
+            "first_executed_indices": {"priority-a": 0},
+            "executed_time_s": {"priority-a": 0.3},
+            "objective": 8.2191780822
+          },
+          {
+            "batch": ["regular-a", "regular-b"],
+            "first_executed_indices": {"regular-a": 0, "regular-b": 0},
+            "executed_time_s": {"regular-a": 0.5, "regular-b": 0.5},
+            "objective": 9.1074681239
+          },
+          {
+            "batch": ["priority-a", "regular-a"],
+            "first_executed_indices": {"priority-a": 0, "regular-a": 0},
+            "executed_time_s": {"priority-a": 0.3, "regular-a": 0.5},
+            "objective": 10.0182149362
+          },
+          {
+            "batch": ["priority-a", "priority-b"],
+            "first_executed_indices": {"priority-a": 0, "priority-b": 0},
+            "executed_time_s": {"priority-a": 0.3, "priority-b": 0.3},
+            "objective": 10.9289617486
+          },
+          {
+            "batch": ["priority-a", "regular-a", "regular-b"],
+            "first_executed_indices": {
+              "priority-a": 0,
+              "regular-a": 0,
+              "regular-b": 0
+            },
+            "executed_time_s": {
+              "priority-a": 0.3,
+              "regular-a": 0.5,
+              "regular-b": 0.5
+            },
+            "objective": 11.2359550562
+          },
+          {
+            "batch": ["priority-a", "priority-b", "regular-a"],
+            "first_executed_indices": {
+              "priority-a": 0,
+              "priority-b": 0,
+              "regular-a": 0
+            },
+            "executed_time_s": {
+              "priority-a": 0.3,
+              "priority-b": 0.3,
+              "regular-a": 0.5
+            },
+            "objective": 11.9382022472
+          }
+        ],
+        "selected_batch": ["priority-a", "priority-b", "regular-a"]
       }
-    ],
-    "selected_batch": ["empty"]
-  }
+    }
+  ]
 }

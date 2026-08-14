@@ -133,6 +133,7 @@ checksummed system-track artifact:
 ```bash
 MUJOCO_GL=egl fleetvla libero --scheduler edf \
   --task 0 --task 1 --execution-horizon 8 \
+  --action-execution latest-indexed \
   --output libero-system-result.json
 ```
 

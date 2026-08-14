@@ -148,6 +148,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="actions executed per prediction; default: model n_action_steps",
     )
+    libero.add_argument(
+        "--action-execution",
+        choices=("sequential-buffer", "latest-indexed"),
+        default="sequential-buffer",
+        help="buffer policy for overlapping action chunks",
+    )
     libero.add_argument("--seed", type=int, default=0)
     libero.add_argument("--output", default="libero-system-result.json")
     return parser
@@ -247,6 +253,7 @@ def _libero(args: argparse.Namespace) -> int:
         scheduler_timeout_s=args.scheduler_timeout,
         episode_length=args.episode_length,
         execution_horizon=args.execution_horizon,
+        action_execution=args.action_execution,
         seed=args.seed,
     )
     destination = write_system_artifact(artifact, args.output)

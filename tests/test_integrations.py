@@ -214,12 +214,19 @@ def test_lerobot_policy_backend_dynamic_batches_action_chunks() -> None:
     torch = pytest.importorskip("torch")
 
     class Policy:
+        def __init__(self):
+            self.reset_calls = 0
+
+        def reset(self):
+            self.reset_calls += 1
+
         def predict_action_chunk(self, batch):
             assert not torch.is_grad_enabled()
             assert batch["state"].shape == (2, 2)
             return torch.tensor([[[1.0], [2.0]], [[3.0], [4.0]]], dtype=torch.float32)
 
-    backend = LeRobotPolicyBackend(Policy())
+    policy = Policy()
+    backend = LeRobotPolicyBackend(policy)
     observations = (
         Observation("a", 0, 0, 0, {"state": torch.tensor([[0.0, 1.0]])}),
         Observation("b", 0, 0, 0, {"state": torch.tensor([[2.0, 3.0]])}),
@@ -232,12 +239,20 @@ def test_lerobot_policy_backend_dynamic_batches_action_chunks() -> None:
         ([3.0], [4.0]),
     ]
     assert result.chunks[0].auxiliary["output_shape"] == (2, 2, 1)
+    assert policy.reset_calls == 1
+
+    backend.reset_session("a")
+    backend.infer(observations, 11.0)
+    assert policy.reset_calls == 2
 
 
 def test_lerobot_policy_backend_preserves_shared_processor_metadata() -> None:
     torch = pytest.importorskip("torch")
 
     class Policy:
+        def reset(self):
+            pass
+
         def predict_action_chunk(self, batch):
             assert batch["action"] is None
             assert batch["next.reward"] == 0.0
@@ -273,6 +288,9 @@ def test_lerobot_policy_backend_preprocesses_the_complete_batch_once() -> None:
         return batch
 
     class Policy:
+        def reset(self):
+            pass
+
         def predict_action_chunk(self, batch):
             assert batch["tokens"].shape == (2, 4)
             return torch.ones((2, 1, 1))
@@ -299,6 +317,9 @@ def test_lerobot_policy_backend_updates_its_cost_from_measured_latency(
     )
 
     class Policy:
+        def reset(self):
+            pass
+
         def predict_action_chunk(self, batch):
             return torch.ones((2, 1, 1))
 
@@ -328,6 +349,9 @@ def test_lerobot_policy_backend_separates_output_and_execution_horizons() -> Non
     class Policy:
         config = Config()
 
+        def reset(self):
+            pass
+
         def predict_action_chunk(self, batch):
             return torch.arange(5, dtype=torch.float32).reshape(1, 5, 1)
 
@@ -339,6 +363,15 @@ def test_lerobot_policy_backend_separates_output_and_execution_horizons() -> Non
     assert result.chunks[0].actions == ([0.0], [1.0])
     assert result.chunks[0].auxiliary["output_shape"] == (1, 5, 1)
     assert result.chunks[0].auxiliary["execution_horizon"] == 2
+
+
+def test_lerobot_policy_backend_requires_resettable_policy() -> None:
+    class Policy:
+        def predict_action_chunk(self, batch):
+            del batch
+
+    with pytest.raises(TypeError, match="define reset"):
+        LeRobotPolicyBackend(Policy())
 
 
 def test_stateful_policy_state_is_session_local_and_resettable() -> None:

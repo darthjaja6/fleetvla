@@ -7,6 +7,7 @@ contract: batched observations in, `[batch, horizon, action_dim]` out.
 from __future__ import annotations
 
 import math
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from typing import Any, Callable
@@ -31,6 +32,8 @@ class LeRobotPolicyBackend:
     ) -> None:
         if not hasattr(policy, "predict_action_chunk"):
             raise TypeError("LeRobot policy must define predict_action_chunk")
+        if not callable(getattr(policy, "reset", None)):
+            raise TypeError("LeRobot policy must define reset")
         self.policy = policy
         self.preprocessor = preprocessor or (lambda batch: batch)
         self.postprocessor = postprocessor or (lambda action: action)
@@ -51,6 +54,8 @@ class LeRobotPolicyBackend:
         ):
             raise ValueError("execution_horizon must be positive")
         self.execution_horizon = execution_horizon
+        self._reset_lock = threading.Lock()
+        self._reset_pending = True
 
     @classmethod
     def from_smolvla_pretrained(
@@ -99,7 +104,15 @@ class LeRobotPolicyBackend:
         except ImportError as error:
             raise ImportError("LeRobot inference requires torch") from error
         with torch.inference_mode():
-            action_batch = self.policy.predict_action_chunk(batch)
+            with self._reset_lock:
+                if self._reset_pending:
+                    self.policy.reset()
+                    self._reset_pending = False
+            try:
+                action_batch = self.policy.predict_action_chunk(batch)
+            except Exception:
+                self.reset()
+                raise
         latency_s = time.perf_counter() - wall_start_s
         observed_per_item_s = max(
             0.0,
@@ -146,9 +159,14 @@ class LeRobotPolicyBackend:
         return BackendResult(latency_s, tuple(chunks))
 
     def reset(self) -> None:
-        reset = getattr(self.policy, "reset", None)
-        if reset is not None:
-            reset()
+        with self._reset_lock:
+            self._reset_pending = True
+
+    def reset_session(self, session_id: str) -> None:
+        """Invalidate shared policy caches before the next inference batch."""
+
+        del session_id
+        self.reset()
 
 
 def _collate(items: list[dict[str, Any]]) -> dict[str, Any]:
