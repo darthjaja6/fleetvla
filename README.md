@@ -99,6 +99,12 @@ trace, multi-dimensional metrics, and a checksum. Reproduce one with:
 fleetvla replay results/batching-three-arm-fifo-s0.json
 ```
 
+On this seed-0 starter workload, FIFO, round robin, EDF, and Lookahead tie at
+148 useful actions and 50.7% starvation; adaptive slack produces 126 actions
+and 58.0% starvation. The tie is expected: this first run demonstrates the
+comparison and replay workflow, not a ranking. Use the targeted workloads below
+to expose algorithm-specific trade-offs.
+
 Use `benchmarks/contention.json` separately for a single-slot ordering and
 fairness stress test; it cannot demonstrate batching gains.
 

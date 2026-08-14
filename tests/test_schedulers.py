@@ -321,3 +321,21 @@ def test_conformance_rejects_hard_coded_fixture_session() -> None:
 
     with pytest.raises(ValueError, match="not ready"):
         check_scheduler(HardCoded)
+
+
+def test_conformance_rejects_selection_from_non_ready_sessions() -> None:
+    class SelectAllSessions:
+        def schedule(self, fleet, costs):
+            del costs
+            if not fleet.ready_sessions:
+                return ScheduleDecision((), "no work")
+            return ScheduleDecision(
+                tuple(
+                    session.session_id
+                    for session in fleet.sessions[: fleet.max_batch_size]
+                ),
+                "incorrectly select every session state",
+            )
+
+    with pytest.raises(ValueError, match="not ready"):
+        check_scheduler(SelectAllSessions)

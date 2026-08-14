@@ -40,6 +40,40 @@ def _snapshot(session_ids: tuple[str, ...], *, now_s: float = 0.1) -> FleetSnaps
     return FleetSnapshot(now_s, sessions, max_batch_size=2)
 
 
+def _mixed_snapshot() -> FleetSnapshot:
+    def session(
+        session_id: str,
+        *,
+        ready_sequence: int | None = None,
+        connected: bool = True,
+        in_flight_sequence: int | None = None,
+    ) -> SessionSnapshot:
+        return SessionSnapshot(
+            session_id=session_id,
+            generation=0,
+            ready_sequence=ready_sequence,
+            request_time_s=0.1 if ready_sequence is not None else None,
+            buffer_steps=0,
+            buffer_horizon_s=0,
+            control_hz=20,
+            latency_budget_s=0.2,
+            network_latency_s=0.005,
+            connected=connected,
+            in_flight_sequence=in_flight_sequence,
+        )
+
+    return FleetSnapshot(
+        0.15,
+        (
+            session("ready", ready_sequence=0),
+            session("idle"),
+            session("in-flight", in_flight_sequence=1),
+            session("disconnected", connected=False),
+        ),
+        max_batch_size=2,
+    )
+
+
 def _validate_decision(decision: object, fleet: FleetSnapshot) -> ScheduleDecision:
     if not isinstance(decision, ScheduleDecision):
         raise SchedulerConformanceError("scheduler must return a ScheduleDecision")
@@ -91,6 +125,7 @@ def check_scheduler(factory: Callable[[], Scheduler]) -> tuple[str, ...]:
     fleets = (
         _snapshot(("arm-a", "arm-b", "arm-c")),
         _snapshot(("robot-x", "robot-y"), now_s=0.12),
+        _mixed_snapshot(),
     )
     costs = InferenceCostModel(0.02, 0.005)
     first = factory()
