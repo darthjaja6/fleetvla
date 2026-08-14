@@ -185,7 +185,7 @@ def replay_artifact(
             scheduler_path.write_text(source, encoding="utf-8")
             replay_config = replace(config, scheduler=f"{scheduler_path}:{class_name}")
             replayed_result = run_benchmark(replay_config)
-        replayed = BenchmarkRun(config, replayed_result.result, replayed_result.metrics)
+        replayed = replace(replayed_result, config=config)
     matches = (
         replayed.metrics.as_dict() == artifact["metrics"]
         and [_event_dict(event) for event in replayed.result.events]

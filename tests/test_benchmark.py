@@ -1192,6 +1192,35 @@ def test_local_scheduler_artifact_embeds_exact_portable_source(tmp_path) -> None
     assert matches
 
 
+def test_artifact_provenance_is_bound_to_executed_source(monkeypatch, tmp_path) -> None:
+    scheduler_path = tmp_path / "custom.py"
+    executed_source = (
+        "from fleetvla import ScheduleDecision\n"
+        "class Custom:\n"
+        "    def schedule(self, fleet, costs):\n"
+        "        del costs\n"
+        "        return ScheduleDecision(tuple(s.session_id for s in "
+        "fleet.ready_sessions[:fleet.max_batch_size]))\n"
+    )
+    scheduler_path.write_text(executed_source)
+    config = replace(default_config(), scheduler=f"{scheduler_path}:Custom")
+
+    run = run_benchmark(config)
+    scheduler_path.write_text("raise RuntimeError('not executed')\n")
+    monkeypatch.setattr("fleetvla.benchmark.fleetvla_source_sha256", lambda: "0" * 64)
+    artifact_path = write_artifact(run, tmp_path / "run.json")
+    artifact = json.loads(artifact_path.read_text())
+
+    assert artifact["provenance"]["scheduler_source"] == executed_source
+    assert (
+        artifact["provenance"]["scheduler_source_sha256"]
+        == hashlib.sha256(executed_source.encode()).hexdigest()
+    )
+    assert artifact["provenance"]["fleetvla_source_sha256"] == (
+        run.fleetvla_source_sha256
+    )
+
+
 def test_matrix_output_sanitizes_local_scheduler_filename(tmp_path) -> None:
     scheduler_path = tmp_path / "custom scheduler.py"
     scheduler_path.write_text(

@@ -7,13 +7,15 @@ import importlib.metadata
 import json
 import math
 import platform
+import tempfile
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from .backend import SyntheticBackend
 from .runtime import ACTION_EXECUTION_POLICIES
-from .schedulers import create_scheduler
+from .schedulers import Scheduler, create_scheduler
 from .simulation import FleetSimulator, RobotSpec, SimulationResult
 from .trace import Event
 from .types import InferenceCostModel
@@ -212,29 +214,65 @@ class BenchmarkRun:
     config: BenchmarkConfig
     result: SimulationResult
     metrics: BenchmarkMetrics
+    fleetvla_source_sha256: str
+    scheduler_source: str | None
+    scheduler_source_sha256: str | None
+
+
+@contextmanager
+def _captured_scheduler(
+    config: BenchmarkConfig,
+) -> Iterator[tuple[Scheduler, str | None, str | None]]:
+    if ":" not in config.scheduler:
+        yield create_scheduler(config.scheduler, config.scheduler_config), None, None
+        return
+
+    filename, class_name = config.scheduler.rsplit(":", 1)
+    source_bytes = Path(filename).expanduser().resolve().read_bytes()
+    source = source_bytes.decode("utf-8")
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+    with tempfile.TemporaryDirectory(prefix="fleetvla-benchmark-") as directory:
+        captured_path = Path(directory) / "scheduler.py"
+        captured_path.write_bytes(source_bytes)
+        scheduler = create_scheduler(
+            f"{captured_path}:{class_name}", config.scheduler_config
+        )
+        yield scheduler, source, source_sha256
 
 
 def run_benchmark(config: BenchmarkConfig) -> BenchmarkRun:
-    scheduler = create_scheduler(config.scheduler, config.scheduler_config)
-    backend = SyntheticBackend(
-        chunk_sizes={robot.session_id: robot.chunk_size for robot in config.robots},
-        base_latency_s=config.base_latency_s,
-        per_item_latency_s=config.per_item_latency_s,
-        batch_latency_s=config.batch_latency_s,
+    source_sha256 = fleetvla_source_sha256()
+    with _captured_scheduler(config) as (
+        scheduler,
+        scheduler_source,
+        scheduler_source_sha256,
+    ):
+        backend = SyntheticBackend(
+            chunk_sizes={robot.session_id: robot.chunk_size for robot in config.robots},
+            base_latency_s=config.base_latency_s,
+            per_item_latency_s=config.per_item_latency_s,
+            batch_latency_s=config.batch_latency_s,
+        )
+        observation_schedule = config.observation_schedule
+        if config.environment == "trace":
+            if observation_schedule is None:
+                raise ValueError("trace environment requires an observation schedule")
+        result = FleetSimulator(
+            list(config.robots),
+            backend=backend,
+            scheduler=scheduler,
+            max_batch_size=config.max_batch_size,
+            action_execution=config.action_execution,
+            observation_schedule=observation_schedule,
+        ).run(config.duration_s)
+    return BenchmarkRun(
+        config,
+        result,
+        compute_metrics(result, config.robots),
+        source_sha256,
+        scheduler_source,
+        scheduler_source_sha256,
     )
-    observation_schedule = config.observation_schedule
-    if config.environment == "trace":
-        if observation_schedule is None:
-            raise ValueError("trace environment requires an observation schedule")
-    result = FleetSimulator(
-        list(config.robots),
-        backend=backend,
-        scheduler=scheduler,
-        max_batch_size=config.max_batch_size,
-        action_execution=config.action_execution,
-        observation_schedule=observation_schedule,
-    ).run(config.duration_s)
-    return BenchmarkRun(config, result, compute_metrics(result, config.robots))
 
 
 def run_matrix(configs: Iterable[BenchmarkConfig]) -> tuple[BenchmarkRun, ...]:
@@ -350,21 +388,15 @@ def _event_dict(event: Event) -> dict[str, Any]:
 
 
 def artifact_dict(run: BenchmarkRun) -> dict[str, Any]:
-    scheduler_source_sha256 = None
-    scheduler_source = None
-    if ":" in run.config.scheduler:
-        scheduler_path = Path(run.config.scheduler.rsplit(":", 1)[0]).resolve()
-        scheduler_source = scheduler_path.read_text(encoding="utf-8")
-        scheduler_source_sha256 = hashlib.sha256(scheduler_source.encode()).hexdigest()
     body = {
         "artifact_version": ARTIFACT_VERSION,
         "provenance": {
             "fleetvla_version": importlib.metadata.version("fleetvla"),
-            "fleetvla_source_sha256": fleetvla_source_sha256(),
+            "fleetvla_source_sha256": run.fleetvla_source_sha256,
             "python_version": platform.python_version(),
             "platform": platform.platform(),
-            "scheduler_source_sha256": scheduler_source_sha256,
-            "scheduler_source": scheduler_source,
+            "scheduler_source_sha256": run.scheduler_source_sha256,
+            "scheduler_source": run.scheduler_source,
         },
         "config": run.config.as_dict(),
         "metrics": run.metrics.as_dict(),
