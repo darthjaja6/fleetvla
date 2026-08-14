@@ -2,7 +2,12 @@
 
 from .backend import SyntheticBackend
 from .clock import VirtualClock
-from .remote import JsonlSocketTransport, RemoteEndpoint, RemoteTransport
+from .remote import (
+    JsonlSocketTransport,
+    RemoteActionReceipt,
+    RemoteEndpoint,
+    RemoteTransport,
+)
 from .runtime import FleetRuntime
 from .schedulers import (
     AdaptiveSlackScheduler,
@@ -43,6 +48,7 @@ __all__ = [
     "Observation",
     "RobotSpec",
     "RemoteEndpoint",
+    "RemoteActionReceipt",
     "RemoteTransport",
     "RoundRobinScheduler",
     "ScheduleDecision",

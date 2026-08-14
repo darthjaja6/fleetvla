@@ -30,6 +30,9 @@ both environments and cannot access simulator rewards or privileged state.
 
 Metrics have explicit units and denominators:
 
+- `sent_actions`: commands handed to an endpoint transport;
+- `accepted_actions`: commands accepted by the endpoint or explicitly
+  acknowledged by a remote robot;
 - `useful_actions`: actions actually consumed by local control loops;
 - `starvation_frequency`: control ticks without an action, including scheduled
   ticks missed by a wall-clock engine, divided by all configured control ticks;
@@ -41,8 +44,15 @@ Metrics have explicit units and denominators:
 - `batch_sizes`: one entry per inference dispatch;
 - `backend_utilization`: modeled or measured inference time, according to the
   track, divided by run duration; and
-- `per_session`: useful actions, starvation, duration, and progress ratio for
-  every robot.
+- `per_session`: sent, accepted, and useful actions plus starvation, duration,
+  and progress ratio for every robot.
+
+For the in-process simulator, sending and acceptance are synchronous, so all
+three action counts are equal. Remote serving keeps them separate: a timeout or
+rejection can increase `sent_actions` without increasing `useful_actions`.
+Historical version-1 system artifacts created before the acknowledged remote
+protocol may omit the first two fields; verification treats their recorded
+executions as the legacy synchronous send/accept path.
 
 `dispatch_deferred` events record when a scheduler deliberately waited and the
 absolute virtual- or monotonic-clock deadline it requested. Use them with batch

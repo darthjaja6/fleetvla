@@ -136,6 +136,34 @@ def test_lookahead_models_weighted_execution_and_dynamic_batch_size() -> None:
     assert "weighted executed time" in decision.reason
 
 
+def test_lookahead_models_latest_indexed_prefix_loss() -> None:
+    sessions = (
+        _session(
+            "buffered",
+            request_time_s=0,
+            buffer_horizon_s=0.5,
+            chunk_size=10,
+        ),
+        _session(
+            "empty",
+            request_time_s=0,
+            buffer_horizon_s=0,
+            chunk_size=8,
+            service_weight=0.9,
+        ),
+    )
+    costs = InferenceCostModel(0.2, 0)
+    scheduler = create_scheduler("lookahead", {"batch_size_limit": 1})
+
+    sequential = scheduler.schedule(FleetSnapshot(0, sessions, 2), costs)
+    latest = scheduler.schedule(
+        FleetSnapshot(0, sessions, 2, action_execution="latest-indexed"), costs
+    )
+
+    assert sequential.session_ids == ("buffered",)
+    assert latest.session_ids == ("empty",)
+
+
 def test_measured_latency_profile_must_cover_requested_batch() -> None:
     costs = InferenceCostModel(0.02, 0.01, (0.05,))
 

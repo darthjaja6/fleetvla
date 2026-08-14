@@ -7,6 +7,12 @@ returns a `ScheduleDecision` containing session IDs. A scheduler may instead
 return an empty selection with an absolute `defer_until_s` when waiting briefly
 could form a better batch.
 
+The snapshot also declares `action_execution`: `sequential-buffer` preserves
+the old queue before a returned chunk, while `latest-indexed` replaces it and
+drops prediction indices already consumed during inference. A scheduler that
+predicts future chunk utility should model this field; ordering-only schedulers
+can ignore it.
+
 Start with the complete example in `examples/my_scheduler.py`. It sorts ready
 robots by remaining executable action time:
 

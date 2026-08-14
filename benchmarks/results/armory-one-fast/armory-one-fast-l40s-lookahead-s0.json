@@ -40645,6 +40645,7 @@
     }
   ],
   "metrics": {
+    "accepted_actions": 1294,
     "action_age_p50_s": 0.5499999999999998,
     "action_age_p95_s": 0.75,
     "backend_utilization": 1.0,
@@ -40746,77 +40747,98 @@
     "fairness": 0.9804178279504413,
     "per_session": {
       "fast-0": {
+        "accepted_actions": 184,
         "actions": 184,
+        "sent_actions": 184,
         "starvation_duration_s": 0.8,
         "starved_ticks": 16,
         "useful_progress_ratio": 0.92
       },
       "slow-0": {
+        "accepted_actions": 126,
         "actions": 126,
+        "sent_actions": 126,
         "starvation_duration_s": 3.7,
         "starved_ticks": 74,
         "useful_progress_ratio": 0.63
       },
       "slow-1": {
+        "accepted_actions": 126,
         "actions": 126,
+        "sent_actions": 126,
         "starvation_duration_s": 3.7,
         "starved_ticks": 74,
         "useful_progress_ratio": 0.63
       },
       "slow-2": {
+        "accepted_actions": 126,
         "actions": 126,
+        "sent_actions": 126,
         "starvation_duration_s": 3.7,
         "starved_ticks": 74,
         "useful_progress_ratio": 0.63
       },
       "slow-3": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       },
       "slow-4": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       },
       "slow-5": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       },
       "slow-6": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       },
       "slow-7": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       },
       "slow-8": {
+        "accepted_actions": 122,
         "actions": 122,
+        "sent_actions": 122,
         "starvation_duration_s": 3.9,
         "starved_ticks": 78,
         "useful_progress_ratio": 0.61
       }
     },
+    "sent_actions": 1294,
     "starvation_duration_s": 35.3,
     "starvation_frequency": 0.353,
     "useful_actions": 1294
   },
   "provenance": {
-    "fleetvla_source_sha256": "f2a04e6090f3464bd7a7a05aeff16cb55e9c5a69fe24905b01bc09f6a14134a5",
+    "fleetvla_source_sha256": "bf0bfee6e501d038945097393cd94fd91adc9cc7dc31bb3779e2981b89b1a20c",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "9733b93d7fc6dab4d836a4483145d1ac9145f37874e5d1a42a0f750f698e7ad0"
+  "sha256": "c208984114aa0c712934aa29d9a52cc3084b918894c88d594918edc508163644"
 }

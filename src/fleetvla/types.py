@@ -75,6 +75,7 @@ class FleetSnapshot:
     now_s: float
     sessions: tuple[SessionSnapshot, ...]
     max_batch_size: int
+    action_execution: str = "sequential-buffer"
 
     @property
     def ready_sessions(self) -> tuple[SessionSnapshot, ...]:
@@ -147,6 +148,7 @@ class ActionCommand:
     action_index: int
     value: Any
     observation_captured_at_s: float
+    deadline_s: float = math.inf
 
 
 @dataclass(frozen=True, slots=True)

@@ -119,7 +119,9 @@ class FleetRuntime:
             )
             for session in self._sessions.values()
         )
-        return FleetSnapshot(now_s, sessions, self.max_batch_size)
+        return FleetSnapshot(
+            now_s, sessions, self.max_batch_size, self.action_execution
+        )
 
     def prepare_batch(self, decision: ScheduleDecision) -> tuple[Observation, ...]:
         if decision.defer_until_s is not None:
@@ -265,6 +267,7 @@ class FleetRuntime:
             action_index=action.action_index,
             value=action.value,
             observation_captured_at_s=action.observation_captured_at_s,
+            deadline_s=self.clock.now() + 1.0 / session.config.control_hz,
         )
 
     def acknowledge(self, command: ActionCommand, *, accepted: bool) -> bool:

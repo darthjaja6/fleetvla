@@ -14,6 +14,7 @@ from .endpoints import (
     ObservationUnavailable,
     validate_observation,
 )
+from .remote import RemoteActionReceipt
 from .runtime import FleetRuntime
 from .scheduler_execution import SchedulerExecutionError, SchedulerRunner
 from .schedulers import EDFScheduler, Scheduler
@@ -38,6 +39,7 @@ class AsyncServingEngine:
         max_batch_size: int = 8,
         inference_timeout_s: float | None = None,
         scheduler_timeout_s: float = 0.01,
+        endpoint_timeout_s: float = 0.1,
         action_execution: str = "sequential-buffer",
     ) -> None:
         if not endpoints:
@@ -57,6 +59,9 @@ class AsyncServingEngine:
         if not math.isfinite(scheduler_timeout_s) or scheduler_timeout_s <= 0:
             raise ValueError("scheduler_timeout_s must be positive")
         self.scheduler_timeout_s = scheduler_timeout_s
+        if not math.isfinite(endpoint_timeout_s) or endpoint_timeout_s <= 0:
+            raise ValueError("endpoint_timeout_s must be positive")
+        self.endpoint_timeout_s = endpoint_timeout_s
         self._scheduler_runner: SchedulerRunner | None = None
         self._fallback_scheduler = EDFScheduler()
         self._using_scheduler_fallback = False
@@ -75,6 +80,12 @@ class AsyncServingEngine:
         self._dispatch_not_before_s: float | None = None
         self._deferred_ready: tuple[tuple[str, int | None], ...] | None = None
         self._dispatch_deadline_s: float | None = None
+        self._endpoint_tasks: dict[str, asyncio.Task[None]] = {}
+        self._background_endpoint_tasks: set[asyncio.Task[None]] = set()
+        self._quarantined_endpoint_tasks: set[asyncio.Task[Any]] = set()
+        self._endpoint_locks = {
+            session_id: asyncio.Lock() for session_id in self.endpoints
+        }
 
     async def run(self, duration_s: float) -> tuple:
         if not math.isfinite(duration_s) or duration_s <= 0:
@@ -93,8 +104,9 @@ class AsyncServingEngine:
         }
         try:
             for session_id in self.endpoints:
-                self._observe(session_id)
+                self._start_endpoint_task(session_id, self._observe(session_id))
             while self.clock.now() - start_s < duration_s:
+                self._harvest_endpoint_tasks()
                 self._maybe_dispatch()
                 if self.clock.now() >= end_s:
                     break
@@ -110,7 +122,7 @@ class AsyncServingEngine:
                         if missed:
                             self._record_missed_ticks(session_id, missed)
                         next_tick[session_id] = due_s + (missed + 1) * period_s
-                        self._control_tick(session_id)
+                        self._start_control_tick(session_id)
                 wake_s = min(next_tick.values())
                 if self._dispatch_not_before_s is not None:
                     wake_s = min(wake_s, self._dispatch_not_before_s)
@@ -127,6 +139,7 @@ class AsyncServingEngine:
                 await self._scheduler_task
             if self._dispatch_task is not None:
                 await self._dispatch_task
+            await self._drain_endpoint_tasks()
             return self.runtime.events.events
         finally:
             if self._scheduler_runner is not None:
@@ -135,7 +148,7 @@ class AsyncServingEngine:
             self._dispatch_deadline_s = None
             self._running = False
 
-    def _observe(self, session_id: str) -> None:
+    async def _observe(self, session_id: str) -> None:
         if self.runtime.has_pending_request(session_id):
             self.runtime.events.append(
                 self.clock.now(),
@@ -145,7 +158,7 @@ class AsyncServingEngine:
             return
         endpoint = self.endpoints[session_id]
         try:
-            payload = endpoint.observe()
+            payload = await self._call_endpoint(session_id, endpoint.observe)
             validate_observation(payload, endpoint.observation_schema)
             self.runtime.observe(session_id, payload)
         except ObservationUnavailable:
@@ -159,9 +172,18 @@ class AsyncServingEngine:
                 session_id,
                 error=str(error),
             )
-            self._disconnect(session_id)
+            await self._disconnect(session_id)
 
-    def _control_tick(self, session_id: str) -> None:
+    def _start_control_tick(self, session_id: str) -> None:
+        task = self._endpoint_tasks.get(session_id)
+        if task is not None and not task.done():
+            self._record_missed_ticks(session_id, 1)
+            return
+        if task is not None:
+            task.result()
+        self._start_endpoint_task(session_id, self._control_tick(session_id))
+
+    async def _control_tick(self, session_id: str) -> None:
         endpoint = self.endpoints[session_id]
         snapshot_before = next(
             session
@@ -174,12 +196,14 @@ class AsyncServingEngine:
         command = self.runtime.dequeue_action(session_id)
         if command is None:
             try:
-                outcome = endpoint.fallback()
+                outcome = await self._call_endpoint(
+                    session_id, endpoint.fallback
+                )
                 self.runtime.events.append(
                     self.clock.now(), "endpoint_fallback", session_id
                 )
                 self._handle_execution_outcome(session_id, outcome)
-                self._observe(session_id)
+                await self._observe(session_id)
             except Exception as error:
                 self.runtime.events.append(
                     self.clock.now(),
@@ -187,10 +211,37 @@ class AsyncServingEngine:
                     session_id,
                     error=str(error),
                 )
-                self._disconnect(session_id)
+                await self._disconnect(session_id)
             return
         try:
-            outcome = endpoint.execute(command.value)
+            self.runtime.events.append(
+                self.clock.now(),
+                "action_sent_endpoint",
+                session_id,
+                sequence=command.observation_sequence,
+                action_index=command.action_index,
+                deadline_s=command.deadline_s,
+            )
+            execute_command = getattr(endpoint, "execute_command", None)
+            if execute_command is None:
+                outcome = await self._call_endpoint(
+                    session_id, endpoint.execute, command.value
+                )
+            else:
+                receipt = await self._call_endpoint(
+                    session_id, execute_command, command
+                )
+                if not isinstance(receipt, RemoteActionReceipt):
+                    raise TypeError(
+                        "command-aware endpoint must return RemoteActionReceipt"
+                    )
+                if receipt.accepted:
+                    self._record_action_accepted(command)
+                if not receipt.executed:
+                    raise RuntimeError("remote robot rejected the action command")
+                outcome = None
+            if execute_command is None:
+                self._record_action_accepted(command)
         except Exception as error:
             self.runtime.acknowledge(command, accepted=False)
             self.runtime.events.append(
@@ -199,9 +250,10 @@ class AsyncServingEngine:
                 session_id,
                 error=str(error),
             )
-            self._disconnect(session_id)
+            await self._disconnect(session_id)
             return
-        self.runtime.acknowledge(command, accepted=True)
+        if not self.runtime.acknowledge(command, accepted=True):
+            return
         self._handle_execution_outcome(session_id, outcome)
         snapshot = next(
             session
@@ -209,7 +261,72 @@ class AsyncServingEngine:
             if session.session_id == session_id
         )
         if snapshot.buffer_horizon_s <= endpoint.session_config.request_threshold_s:
-            self._observe(session_id)
+            await self._observe(session_id)
+
+    def _record_action_accepted(self, command: Any) -> None:
+        self.runtime.events.append(
+            self.clock.now(),
+            "action_accepted_endpoint",
+            command.session_id,
+            sequence=command.observation_sequence,
+            action_index=command.action_index,
+        )
+
+    async def _call_endpoint(self, session_id: str, method: Any, *args: Any) -> Any:
+        async def invoke() -> Any:
+            async with self._endpoint_locks[session_id]:
+                if asyncio.iscoroutinefunction(method):
+                    return await method(*args)
+                return await asyncio.to_thread(method, *args)
+
+        operation = asyncio.create_task(invoke())
+        try:
+            return await asyncio.wait_for(
+                asyncio.shield(operation), timeout=self.endpoint_timeout_s
+            )
+        except TimeoutError:
+            # A Python thread cannot be killed safely. Keep the operation and
+            # its per-endpoint lock alive so a timed-out driver cannot overlap
+            # a later close/reconnect, while other sessions continue.
+            self._quarantined_endpoint_tasks.add(operation)
+            raise
+
+    def _start_endpoint_task(
+        self, session_id: str, operation: Any
+    ) -> asyncio.Task[None]:
+        task = asyncio.create_task(operation)
+        self._endpoint_tasks[session_id] = task
+        return task
+
+    def _start_background_endpoint_task(self, operation: Any) -> None:
+        task = asyncio.create_task(operation)
+        self._background_endpoint_tasks.add(task)
+
+    def _harvest_endpoint_tasks(self) -> None:
+        for session_id, task in tuple(self._endpoint_tasks.items()):
+            if task.done():
+                task.result()
+                del self._endpoint_tasks[session_id]
+        for task in tuple(self._background_endpoint_tasks):
+            if task.done():
+                task.result()
+                self._background_endpoint_tasks.remove(task)
+        for task in tuple(self._quarantined_endpoint_tasks):
+            if task.done():
+                try:
+                    task.result()
+                except Exception:
+                    pass
+                self._quarantined_endpoint_tasks.remove(task)
+
+    async def _drain_endpoint_tasks(self) -> None:
+        tasks = tuple(self._endpoint_tasks.values()) + tuple(
+            self._background_endpoint_tasks
+        )
+        if tasks:
+            await asyncio.gather(*tasks)
+        self._endpoint_tasks.clear()
+        self._background_endpoint_tasks.clear()
 
     def _record_missed_ticks(self, session_id: str, count: int) -> None:
         self.runtime.events.append(
@@ -459,7 +576,7 @@ class AsyncServingEngine:
         if commit_chunk is not None:
             commit_chunk(chunk, accepted)
 
-    def _disconnect(self, session_id: str) -> None:
+    async def _disconnect(self, session_id: str) -> None:
         snapshot = next(
             session
             for session in self.runtime.snapshot().sessions
@@ -471,7 +588,9 @@ class AsyncServingEngine:
         if reset_session is not None:
             reset_session(session_id)
         try:
-            self.endpoints[session_id].close()
+            await self._call_endpoint(
+                session_id, self.endpoints[session_id].close
+            )
         except Exception as error:
             self.runtime.events.append(
                 self.clock.now(),
@@ -557,27 +676,41 @@ class AsyncServingEngine:
         for observation in batch:
             session_id = observation.session_id
             self.reset_session(session_id)
-            try:
-                outcome = self.endpoints[session_id].fallback()
-                self.runtime.events.append(
-                    self.clock.now(), "endpoint_fallback", session_id
-                )
-                self._handle_execution_outcome(session_id, outcome)
-            except Exception as fallback_error:
-                self.runtime.events.append(
-                    self.clock.now(),
-                    "endpoint_fallback_failed",
-                    session_id,
-                    error=str(fallback_error),
-                )
-                self._disconnect(session_id)
+            self._start_background_endpoint_task(
+                self._fallback_after_failure(session_id)
+            )
+
+    async def _fallback_after_failure(self, session_id: str) -> None:
+        try:
+            outcome = await self._call_endpoint(
+                session_id, self.endpoints[session_id].fallback
+            )
+            self.runtime.events.append(
+                self.clock.now(), "endpoint_fallback", session_id
+            )
+            self._handle_execution_outcome(session_id, outcome)
+        except Exception as fallback_error:
+            self.runtime.events.append(
+                self.clock.now(),
+                "endpoint_fallback_failed",
+                session_id,
+                error=str(fallback_error),
+            )
+            await self._disconnect(session_id)
 
     def close(self) -> None:
         if self._scheduler_runner is not None:
             self._scheduler_runner.close()
             self._scheduler_runner = None
-        for session_id in self.endpoints:
-            self._disconnect(session_id)
+        for session_id, endpoint in self.endpoints.items():
+            snapshot = next(
+                session
+                for session in self.runtime.snapshot().sessions
+                if session.session_id == session_id
+            )
+            if snapshot.connected:
+                self.runtime.disconnect(session_id)
+            endpoint.close()
 
 
 def serving_metrics(events: tuple, endpoints: list[Endpoint], duration_s: float):

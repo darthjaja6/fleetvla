@@ -8,6 +8,7 @@ from fleetvla import (
     ActionChunk,
     FieldSpec,
     FIFOScheduler,
+    RemoteActionReceipt,
     ScheduleDecision,
     SessionConfig,
     SyntheticBackend,
@@ -74,6 +75,17 @@ class BlockingScheduler(FIFOScheduler):
     def schedule(self, fleet, costs):
         time.sleep(0.2)
         return super().schedule(fleet, costs)
+
+
+class CommandEndpoint(FakeEndpoint):
+    def __init__(self, session_id: str, *, acknowledgement_delay_s: float) -> None:
+        super().__init__(session_id)
+        self.acknowledgement_delay_s = acknowledgement_delay_s
+
+    async def execute_command(self, command):
+        await asyncio.sleep(self.acknowledgement_delay_s)
+        self.actions.append(command.value)
+        return RemoteActionReceipt(accepted=True, executed=True)
 
 
 class BrieflyDeferredScheduler(FIFOScheduler):
@@ -302,6 +314,57 @@ def test_endpoint_action_failure_disconnects_and_rejects_command() -> None:
     assert any(event.kind == "action_rejected_endpoint" for event in events)
     assert any(event.kind == "session_disconnected" for event in events)
     assert endpoint.closed
+
+
+def test_remote_ack_timeout_does_not_block_healthy_session() -> None:
+    blocked = CommandEndpoint("blocked", acknowledgement_delay_s=0.2)
+    healthy = CommandEndpoint("healthy", acknowledgement_delay_s=0)
+    engine = AsyncServingEngine(
+        [blocked, healthy],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+        max_batch_size=2,
+        endpoint_timeout_s=0.02,
+    )
+
+    events = asyncio.run(engine.run(0.12))
+
+    assert not any(
+        event.kind == "action_executed" and event.session_id == "blocked"
+        for event in events
+    )
+    assert any(
+        event.kind == "action_rejected_endpoint"
+        and event.session_id == "blocked"
+        for event in events
+    )
+    assert any(
+        event.kind == "action_executed" and event.session_id == "healthy"
+        for event in events
+    )
+    metrics = serving_metrics(events, [blocked, healthy], 0.12)
+    assert metrics.sent_actions > metrics.accepted_actions
+    assert metrics.accepted_actions == metrics.useful_actions
+
+
+def test_reset_rejects_remote_ack_from_previous_generation() -> None:
+    endpoint = CommandEndpoint("arm", acknowledgement_delay_s=0.04)
+    engine = AsyncServingEngine(
+        [endpoint],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FIFOScheduler(),
+    )
+
+    async def run_and_reset():
+        run = asyncio.create_task(engine.run(0.07))
+        await asyncio.sleep(0.03)
+        engine.reset_session("arm")
+        return await run
+
+    events = asyncio.run(run_and_reset())
+
+    assert any(event.kind == "action_ack_rejected_stale" for event in events)
+    assert not any(event.kind == "action_executed" for event in events)
 
 
 def test_backend_failure_resets_generation_and_uses_local_fallback() -> None:

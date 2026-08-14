@@ -5915,6 +5915,7 @@
     }
   ],
   "metrics": {
+    "accepted_actions": 104,
     "action_age_p50_s": 0.3999999999999999,
     "action_age_p95_s": 0.7000000000000002,
     "backend_utilization": 1.0,
@@ -5962,35 +5963,42 @@
     "fairness": 0.8711349110381759,
     "per_session": {
       "fast-arm": {
+        "accepted_actions": 30,
         "actions": 30,
+        "sent_actions": 30,
         "starvation_duration_s": 4.0,
         "starved_ticks": 120,
         "useful_progress_ratio": 0.2
       },
       "medium-arm": {
+        "accepted_actions": 45,
         "actions": 45,
+        "sent_actions": 45,
         "starvation_duration_s": 2.75,
         "starved_ticks": 55,
         "useful_progress_ratio": 0.45
       },
       "slow-arm": {
+        "accepted_actions": 29,
         "actions": 29,
+        "sent_actions": 29,
         "starvation_duration_s": 2.1,
         "starved_ticks": 21,
         "useful_progress_ratio": 0.58
       }
     },
+    "sent_actions": 104,
     "starvation_duration_s": 8.85,
     "starvation_frequency": 0.6533333333333333,
     "useful_actions": 104
   },
   "provenance": {
-    "fleetvla_source_sha256": "f2a04e6090f3464bd7a7a05aeff16cb55e9c5a69fe24905b01bc09f6a14134a5",
+    "fleetvla_source_sha256": "bf0bfee6e501d038945097393cd94fd91adc9cc7dc31bb3779e2981b89b1a20c",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "401a8cd45d3d8e58a9175fd44054703557629a442cab0d345e44767d3654fd88"
+  "sha256": "1fc83b2242344ea535d471950770d24c897b4077f67316a31269c68f6d404586"
 }

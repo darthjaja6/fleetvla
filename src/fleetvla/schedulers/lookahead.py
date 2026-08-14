@@ -64,6 +64,7 @@ class LookaheadScheduler:
                     selected=session.session_id in batch,
                     inference_latency_s=latency_s,
                     horizon_s=self.config.evaluation_horizon_s,
+                    action_execution=fleet.action_execution,
                 )
                 for session in fleet.sessions
                 if session.connected
@@ -129,11 +130,19 @@ def _new_chunk_executed_time(
     selected: bool,
     inference_latency_s: float,
     horizon_s: float,
+    action_execution: str,
 ) -> float:
     if not selected:
         return 0.0
     buffered_s = session.buffer_steps / session.control_hz
     chunk_s = session.chunk_size / session.control_hz
     arrival_s = inference_latency_s + session.network_latency_s
+    if action_execution == "latest-indexed":
+        # The observation predicts from the next action index. Old buffered
+        # actions consumed before this chunk arrives therefore remove the same
+        # prefix from the returned chunk when it replaces that buffer.
+        skipped_prefix_s = min(buffered_s, arrival_s)
+        remaining_chunk_s = max(0.0, chunk_s - skipped_prefix_s)
+        return min(remaining_chunk_s, max(0.0, horizon_s - arrival_s))
     chunk_start_s = max(buffered_s, arrival_s)
     return min(chunk_s, max(0.0, horizon_s - chunk_start_s))

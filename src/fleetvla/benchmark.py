@@ -189,6 +189,8 @@ def load_config(path: str | Path) -> BenchmarkConfig:
 
 @dataclass(frozen=True, slots=True)
 class BenchmarkMetrics:
+    sent_actions: int
+    accepted_actions: int
     useful_actions: int
     starvation_frequency: float
     starvation_duration_s: float
@@ -257,6 +259,12 @@ def compute_metrics(
     for robot in robots:
         executed = result.count("action_executed", robot.session_id)
         rejected = result.count("action_rejected_endpoint", robot.session_id)
+        sent = result.count("action_sent_endpoint", robot.session_id)
+        accepted = result.count("action_accepted_endpoint", robot.session_id)
+        if sent == 0:
+            sent = executed + rejected
+        if accepted == 0:
+            accepted = executed
         missed = sum(
             int(event.details["count"])
             for event in result.events
@@ -272,6 +280,8 @@ def compute_metrics(
         total_starved += starved
         total_ticks += ticks
         per_session[robot.session_id] = {
+            "sent_actions": sent,
+            "accepted_actions": accepted,
             "actions": executed,
             "starved_ticks": starved,
             "starvation_duration_s": starvation_duration_s,
@@ -310,6 +320,12 @@ def compute_metrics(
         and "latency_s" in event.details
     )
     return BenchmarkMetrics(
+        sent_actions=sum(
+            int(metrics["sent_actions"]) for metrics in per_session.values()
+        ),
+        accepted_actions=sum(
+            int(metrics["accepted_actions"]) for metrics in per_session.values()
+        ),
         useful_actions=sum(int(metrics["actions"]) for metrics in per_session.values()),
         starvation_frequency=total_starved / total_ticks if total_ticks else 0.0,
         starvation_duration_s=sum(

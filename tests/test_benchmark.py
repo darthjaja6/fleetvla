@@ -110,6 +110,8 @@ def _valid_system_artifact():
             },
             "metrics": {
                 "system": {
+                    "sent_actions": 1,
+                    "accepted_actions": 1,
                     "useful_actions": 1,
                     "starvation_frequency": 0.0,
                     "starvation_duration_s": 0.0,
@@ -120,6 +122,8 @@ def _valid_system_artifact():
                     "backend_utilization": 0.04,
                     "per_session": {
                         session_id: {
+                            "sent_actions": 1,
+                            "accepted_actions": 1,
                             "actions": 1,
                             "starved_ticks": 0,
                             "starvation_duration_s": 0.0,
@@ -599,6 +603,8 @@ def test_system_artifact_accepts_failure_reset_and_fallback(tmp_path) -> None:
         },
     ]
     artifact["metrics"]["system"].update(
+        sent_actions=0,
+        accepted_actions=0,
         useful_actions=0,
         starvation_frequency=1.0,
         starvation_duration_s=1.0,
@@ -607,6 +613,8 @@ def test_system_artifact_accepts_failure_reset_and_fallback(tmp_path) -> None:
         backend_utilization=0.0,
     )
     artifact["metrics"]["system"]["per_session"][session_id].update(
+        sent_actions=0,
+        accepted_actions=0,
         actions=0,
         starved_ticks=1,
         starvation_duration_s=1.0,
@@ -778,6 +786,8 @@ def test_system_artifact_requires_disconnect_after_action_failure(tmp_path) -> N
         ]
     )
     artifact["metrics"]["system"].update(
+        sent_actions=1,
+        accepted_actions=0,
         useful_actions=0,
         starvation_frequency=1.0,
         starvation_duration_s=1.0,
@@ -785,6 +795,8 @@ def test_system_artifact_requires_disconnect_after_action_failure(tmp_path) -> N
         action_age_p95_s=None,
     )
     artifact["metrics"]["system"]["per_session"][session_id].update(
+        sent_actions=1,
+        accepted_actions=0,
         actions=0,
         starved_ticks=1,
         starvation_duration_s=1.0,
@@ -878,10 +890,14 @@ def test_system_artifact_rejects_action_before_required_terminal_transition(
     index = artifact["events"].index(preceding_event) + 1
     artifact["events"][index:index] = [dequeue, execute]
     artifact["metrics"]["system"].update(
+        sent_actions=2,
+        accepted_actions=2,
         useful_actions=2,
         starvation_frequency=0.0,
     )
     artifact["metrics"]["system"]["per_session"]["libero_spatial-0"].update(
+        sent_actions=2,
+        accepted_actions=2,
         actions=2,
         useful_progress_ratio=1.0,
     )
@@ -891,6 +907,42 @@ def test_system_artifact_rejects_action_before_required_terminal_transition(
     path.write_text(json.dumps(artifact))
 
     with pytest.raises(ValueError, match="followed by"):
+        verify_artifact(path)
+
+
+def test_system_artifact_binds_sent_accepted_and_executed_action(tmp_path) -> None:
+    artifact = _valid_system_artifact()
+    artifact.pop("sha256")
+    dequeued = _event(artifact, "action_dequeued")
+    index = artifact["events"].index(dequeued) + 1
+    identity = {
+        "sequence": dequeued["details"]["sequence"],
+        "action_index": dequeued["details"]["action_index"],
+    }
+    sent = {
+        "time_s": dequeued["time_s"],
+        "kind": "action_sent_endpoint",
+        "session_id": dequeued["session_id"],
+        "details": {**identity, "deadline_s": dequeued["time_s"] + 1},
+    }
+    accepted = {
+        "time_s": dequeued["time_s"],
+        "kind": "action_accepted_endpoint",
+        "session_id": dequeued["session_id"],
+        "details": identity,
+    }
+    artifact["events"][index:index] = [sent, accepted]
+    _seal_artifact(artifact)
+    path = tmp_path / "system.json"
+    path.write_text(json.dumps(artifact))
+
+    assert verify_artifact(path)["artifact_kind"] == "system"
+
+    artifact.pop("sha256")
+    artifact["events"].remove(accepted)
+    _seal_artifact(artifact)
+    path.write_text(json.dumps(artifact))
+    with pytest.raises(ValueError, match="action outcome"):
         verify_artifact(path)
 
 

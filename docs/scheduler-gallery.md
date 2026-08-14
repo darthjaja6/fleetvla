@@ -40,8 +40,10 @@ The versioned `armory-one-fast-l40s` workload holds ten 20 Hz sessions, fast/slo
 execution horizons 6/10, max batch size 3, 5 ms action delivery, and the paper's
 published L40S batch latencies fixed for every scheduler. It uses
 `latest-indexed` execution: a returned chunk skips action indices already
-executed during inference and replaces older buffered predictions. The fast
-session has weight 5 and the nine slow sessions weight 1. In the deterministic
+executed during inference and replaces older buffered predictions. Lookahead
+reads this policy from `FleetSnapshot` and removes that skipped prefix from its
+L=1 reward estimate; its sequential-buffer model waits for the old buffer to
+drain. The fast session has weight 5 and the nine slow sessions weight 1. In the deterministic
 10-second systems proxy:
 
 | Scheduler | Useful actions | Starvation | Fast progress | Representative slow progress | Artifact |

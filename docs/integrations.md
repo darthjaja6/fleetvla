@@ -9,7 +9,9 @@ does not change when any of the other three change.
 Remote robot processes use the same endpoint contract through the
 [versioned JSON-lines transport](remote.md). Admission binds one connection to
 one configured session before its observations can enter the runtime; action,
-fallback, validation, and disconnect behavior remain endpoint-local.
+fallback, validation, and disconnect behavior remain endpoint-local. A remote
+action becomes useful only after the robot acknowledges acceptance and actual
+control-loop execution.
 
 ## SmolVLA and LeRobot policies
 

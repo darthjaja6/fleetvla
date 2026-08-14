@@ -25,6 +25,13 @@ failure. An execution exception disconnects the session, increments its
 generation, clears buffered actions, and closes the endpoint. Old in-flight
 chunks and acknowledgements are then rejected.
 
+The wall-clock engine runs each endpoint's observe, execute, fallback, and
+close callbacks outside the shared asyncio loop and applies
+`endpoint_timeout_s`. Sessions have independent locks, so a slow driver cannot
+run concurrently with its own close/reconnect or block a healthy peer. Python
+cannot terminate a native driver call safely after timeout; hardware adapters
+must still configure finite device or middleware deadlines.
+
 `ROS2Endpoint` uses a node's standard `create_subscription` and
 `create_publisher` methods. Application code supplies message types and
 converters because observation and command messages are robot-specific. A safe

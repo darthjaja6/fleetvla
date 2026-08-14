@@ -266,6 +266,8 @@ def _validate_event_contract(
             "chunk_rejected_horizon",
             "chunk_accepted",
             "action_dequeued",
+            "action_sent_endpoint",
+            "action_accepted_endpoint",
             "action_executed",
             "action_rejected_endpoint",
             "session_reconnected",
@@ -477,12 +479,22 @@ def _validate_event_contract(
         _non_negative_integer(details["sequence"], "sequence")
         _positive_integer(details["actions"], "actions")
         _finite_number(details["action_age_s"], "action_age_s", minimum=0)
-    elif kind in {"action_dequeued", "action_executed", "action_rejected_endpoint"}:
+    elif kind in {
+        "action_dequeued",
+        "action_sent_endpoint",
+        "action_accepted_endpoint",
+        "action_executed",
+        "action_rejected_endpoint",
+    }:
         _non_negative_integer(details["sequence"], "sequence")
         _non_negative_integer(details["action_index"], "action_index")
-        _finite_number(details["action_age_s"], "action_age_s", minimum=0)
         if kind == "action_dequeued":
+            _finite_number(details["action_age_s"], "action_age_s", minimum=0)
             _non_negative_integer(details["remaining_steps"], "remaining_steps")
+        elif kind == "action_sent_endpoint":
+            _finite_number(details["deadline_s"], "deadline_s", minimum=0)
+        elif kind in {"action_executed", "action_rejected_endpoint"}:
+            _finite_number(details["action_age_s"], "action_age_s", minimum=0)
     elif kind in {"session_reconnected", "session_reset"}:
         _non_negative_integer(details["generation"], "generation")
     elif kind in {
@@ -512,6 +524,8 @@ _EVENT_REQUIRED_DETAILS = {
         "action_index",
         "action_age_s",
     ),
+    "action_sent_endpoint": ("sequence", "action_index", "deadline_s"),
+    "action_accepted_endpoint": ("sequence", "action_index"),
     "action_executed": ("sequence", "action_index", "action_age_s"),
     "action_rejected_endpoint": ("sequence", "action_index", "action_age_s"),
     "session_reconnected": ("generation",),
@@ -802,6 +816,8 @@ def _validate_system_session_lifecycle(
     outstanding: dict[str, tuple[int, int] | None] = {
         session_id: None for session_id in expected_sessions
     }
+    action_sent = {session_id: False for session_id in expected_sessions}
+    action_accepted = {session_id: False for session_id in expected_sessions}
     connected = {session_id: True for session_id in expected_sessions}
     generations = {session_id: 0 for session_id in expected_sessions}
     next_sequences = {session_id: 0 for session_id in expected_sessions}
@@ -864,6 +880,8 @@ def _validate_system_session_lifecycle(
                 "dispatched request must enter its batch before local work"
             )
         if outstanding[session_id] is not None and kind not in {
+            "action_sent_endpoint",
+            "action_accepted_endpoint",
             "action_executed",
             "action_rejected_endpoint",
         }:
@@ -935,12 +953,37 @@ def _validate_system_session_lifecycle(
             if details["remaining_steps"] != len(buffers[session_id]):
                 raise ValueError("dequeued action reports an invalid remaining count")
             outstanding[session_id] = key
+            action_sent[session_id] = False
+            action_accepted[session_id] = False
+        elif kind == "action_sent_endpoint":
+            key = (details["sequence"], details["action_index"])
+            if (
+                outstanding[session_id] != key
+                or action_sent[session_id]
+                or details["deadline_s"] < event["time_s"]
+            ):
+                raise ValueError("sent action does not match a dequeued action")
+            action_sent[session_id] = True
+        elif kind == "action_accepted_endpoint":
+            key = (details["sequence"], details["action_index"])
+            if (
+                outstanding[session_id] != key
+                or not action_sent[session_id]
+                or action_accepted[session_id]
+            ):
+                raise ValueError("accepted action does not match a sent action")
+            action_accepted[session_id] = True
         elif kind in {"action_executed", "action_rejected_endpoint"}:
             key = (details["sequence"], details["action_index"])
             captured_at_s = observation_times[session_id].get(details["sequence"])
             if (
                 outstanding[session_id] != key
                 or captured_at_s is None
+                or (
+                    kind == "action_executed"
+                    and action_sent[session_id]
+                    and not action_accepted[session_id]
+                )
                 or not math.isclose(
                     details["action_age_s"],
                     event["time_s"] - captured_at_s,
@@ -950,6 +993,8 @@ def _validate_system_session_lifecycle(
             ):
                 raise ValueError("action outcome does not match a dequeued action")
             outstanding[session_id] = None
+            action_sent[session_id] = False
+            action_accepted[session_id] = False
             ticks[session_id] += 1
             if kind == "action_executed":
                 task_step_due[session_id] = True
@@ -1000,6 +1045,8 @@ def _validate_system_session_lifecycle(
                 raise ValueError("session reset has no failure or episode boundary")
             buffers[session_id].clear()
             outstanding[session_id] = None
+            action_sent[session_id] = False
+            action_accepted[session_id] = False
             ready[session_id] = None
             ready_times[session_id] = None
             dispatched_times[session_id] = None
@@ -1017,6 +1064,8 @@ def _validate_system_session_lifecycle(
             connected[session_id] = False
             buffers[session_id].clear()
             outstanding[session_id] = None
+            action_sent[session_id] = False
+            action_accepted[session_id] = False
             ready[session_id] = None
             ready_times[session_id] = None
             dispatched_times[session_id] = None
@@ -1033,6 +1082,8 @@ def _validate_system_session_lifecycle(
         raise ValueError("system event ticks do not match duration and control_hz")
     pending = (
         outstanding,
+        action_sent,
+        action_accepted,
         fallback_due,
         task_step_due,
         boundary_due,
@@ -1173,6 +1224,18 @@ def _validate_benchmark_metrics(metrics: Any, expected_sessions: set[str]) -> No
         "per_session",
     )
     _non_negative_integer(metrics["useful_actions"], "useful_actions")
+    has_delivery_metrics = "sent_actions" in metrics or "accepted_actions" in metrics
+    if has_delivery_metrics:
+        if not {"sent_actions", "accepted_actions"} <= metrics.keys():
+            raise ValueError("action delivery metrics must be provided together")
+        for field in ("sent_actions", "accepted_actions"):
+            _non_negative_integer(metrics[field], field)
+        if not metrics["useful_actions"] <= metrics["accepted_actions"] <= metrics[
+            "sent_actions"
+        ]:
+            raise ValueError(
+                "action delivery metrics must be monotonically decreasing"
+            )
     _unit_interval(metrics["starvation_frequency"], "starvation_frequency")
     _finite_number(metrics["starvation_duration_s"], "starvation_duration_s", minimum=0)
     for field in ("action_age_p50_s", "action_age_p95_s"):
@@ -1205,6 +1268,21 @@ def _validate_benchmark_metrics(metrics: Any, expected_sessions: set[str]) -> No
             "useful_progress_ratio",
         )
         _non_negative_integer(session_metrics["actions"], "session actions")
+        if has_delivery_metrics:
+            if not {"sent_actions", "accepted_actions"} <= session_metrics.keys():
+                raise ValueError(
+                    "session action delivery metrics must be provided together"
+                )
+            for field in ("sent_actions", "accepted_actions"):
+                _non_negative_integer(
+                    session_metrics[field], f"session {field}"
+                )
+            if not session_metrics["actions"] <= session_metrics[
+                "accepted_actions"
+            ] <= session_metrics["sent_actions"]:
+                raise ValueError(
+                    "session action delivery metrics must be monotonically decreasing"
+                )
         _non_negative_integer(session_metrics["starved_ticks"], "session starved_ticks")
         _finite_number(
             session_metrics["starvation_duration_s"],
@@ -1229,6 +1307,12 @@ def _validate_metrics_match_events(
         ).as_dict()
     except (KeyError, TypeError, ValueError) as error:
         raise ValueError("artifact event details are invalid") from error
+    if "sent_actions" not in metrics:
+        calculated.pop("sent_actions")
+        calculated.pop("accepted_actions")
+        for session_metrics in calculated["per_session"].values():
+            session_metrics.pop("sent_actions")
+            session_metrics.pop("accepted_actions")
     if calculated != metrics:
         raise ValueError("artifact metrics do not match its events")
 
