@@ -5993,12 +5993,12 @@
     "useful_actions": 104
   },
   "provenance": {
-    "fleetvla_source_sha256": "706b7b7ef9611efe87a4ed8011e570462ddce3d1ed69655219739eefaedb9459",
+    "fleetvla_source_sha256": "66d2fbf712a40fb6d7c98f6dcb32819248a6489d02af126c42ff6b406a040b00",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "9f68339815374a6b5e0ddb6775c6a9036d17f7f13429ce3ee318c6dddc4ca882"
+  "sha256": "69df4fc1c542863301de4b4bee72ee5f25fd4d300513760db94e145c870ced95"
 }

@@ -61,6 +61,12 @@ class SleepingBackend(SyntheticBackend):
         return super().infer(observations, started_at_s)
 
 
+class FailingScheduler:
+    def schedule(self, fleet, costs):
+        del fleet, costs
+        raise RuntimeError("immediate failure")
+
+
 class SlowEndpoint(FakeEndpoint):
     def execute(self, action):
         time.sleep(0.04)
@@ -309,6 +315,21 @@ def test_scheduler_timeout_does_not_block_control_fallbacks() -> None:
     assert "decision budget" in failure.details["error"]
     assert any(event.kind == "action_executed" for event in events)
     assert any(event.kind == "batch_dispatched" for event in events)
+
+
+def test_scheduler_failure_records_elapsed_latency() -> None:
+    engine = AsyncServingEngine(
+        [FakeEndpoint("a")],
+        SyntheticBackend(chunk_size=2, base_latency_s=0, per_item_latency_s=0),
+        FailingScheduler(),
+        scheduler_timeout_s=1.0,
+    )
+
+    events = asyncio.run(engine.run(0.06))
+
+    decision = next(event for event in events if event.kind == "scheduler_decision")
+    assert decision.details["fallback"] is True
+    assert 0 <= decision.details["latency_s"] < 1.0
 
 
 def test_invalid_scheduler_decision_falls_back_without_poisoning_trace() -> None:

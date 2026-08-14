@@ -6076,12 +6076,12 @@
     "useful_actions": 109
   },
   "provenance": {
-    "fleetvla_source_sha256": "706b7b7ef9611efe87a4ed8011e570462ddce3d1ed69655219739eefaedb9459",
+    "fleetvla_source_sha256": "66d2fbf712a40fb6d7c98f6dcb32819248a6489d02af126c42ff6b406a040b00",
     "fleetvla_version": "0.1.0.dev0",
     "platform": "Linux-7.0.0-28-generic-x86_64-with-glibc2.39",
     "python_version": "3.12.2",
     "scheduler_source": null,
     "scheduler_source_sha256": null
   },
-  "sha256": "38fc5418c2930b3ffbf47095febab424abb0d4e7558550da4d9cf48ecaa95366"
+  "sha256": "89746ccb0678fb81bcc8b145b0fbddf1532a0fb649a136fd9014f7a88da46828"
 }

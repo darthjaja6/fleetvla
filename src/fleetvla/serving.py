@@ -414,6 +414,7 @@ class AsyncServingEngine:
         self, snapshot: FleetSnapshot, costs: InferenceCostModel
     ) -> None:
         fallback = False
+        started_s = asyncio.get_running_loop().time()
         try:
             if self._scheduler_runner is None:
                 raise RuntimeError("scheduler runner is not active")
@@ -430,7 +431,7 @@ class AsyncServingEngine:
                 return
             fallback = True
             self._using_scheduler_fallback = True
-            latency_s = self.scheduler_timeout_s
+            latency_s = asyncio.get_running_loop().time() - started_s
             self.runtime.events.append(
                 self.clock.now(),
                 "scheduler_failed",

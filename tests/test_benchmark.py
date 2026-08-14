@@ -64,6 +64,89 @@ def test_libero_cli_forwards_action_execution(
     assert captured["action_execution"] == action_execution
 
 
+@pytest.mark.parametrize("action_execution", ["sequential-buffer", "latest-indexed"])
+def test_system_artifact_accepts_runtime_action_execution_modes(
+    tmp_path, action_execution
+) -> None:
+    artifact = _valid_system_artifact()
+    artifact.pop("sha256")
+    artifact["config"]["action_execution"] = action_execution
+    _seal_artifact(artifact)
+    path = tmp_path / "system.json"
+    path.write_text(json.dumps(artifact))
+
+    assert verify_artifact(path)["config"]["action_execution"] == action_execution
+
+
+def test_system_lifecycle_validates_latest_indexed_prefix_replacement() -> None:
+    from fleetvla import ActionChunk, ScheduleDecision, SessionConfig, VirtualClock
+    from fleetvla.artifact_lifecycle import _validate_system_session_lifecycle
+    from fleetvla.runtime import FleetRuntime
+
+    clock = VirtualClock()
+    runtime = FleetRuntime(clock, max_batch_size=1, action_execution="latest-indexed")
+    runtime.register(SessionConfig("arm", control_hz=10, chunk_size=4))
+    first = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    clock.advance_to(0.05)
+    runtime.accept(ActionChunk("arm", first.sequence, 0, (0, 1, 2, 3), 0.05))
+
+    clock.advance_to(0.1)
+    runtime.consume_action("arm")
+    runtime.events.append(
+        clock.now(),
+        "endpoint_task_step",
+        "arm",
+        reward=0.0,
+        success=False,
+        terminated=False,
+        truncated=False,
+    )
+    second = runtime.observe("arm")
+    runtime.prepare_batch(ScheduleDecision(("arm",)))
+    clock.advance_to(0.2)
+    runtime.consume_action("arm")
+    runtime.events.append(
+        clock.now(),
+        "endpoint_task_step",
+        "arm",
+        reward=0.0,
+        success=False,
+        terminated=False,
+        truncated=False,
+    )
+    clock.advance_to(0.25)
+    runtime.accept(
+        ActionChunk(
+            "arm",
+            second.sequence,
+            0,
+            (10, 11, 12, 13),
+            0.25,
+            action_index_start=second.action_index_start,
+        )
+    )
+    clock.advance_to(0.3)
+    runtime.consume_action("arm")
+    runtime.events.append(
+        clock.now(),
+        "endpoint_task_step",
+        "arm",
+        reward=0.0,
+        success=False,
+        terminated=False,
+        truncated=False,
+    )
+
+    _validate_system_session_lifecycle(
+        [event.as_dict() for event in runtime.events.events],
+        {"arm"},
+        duration_s=0.3,
+        control_hz=10,
+        action_execution="latest-indexed",
+    )
+
+
 def _seal_artifact(body):
     body["sha256"] = hashlib.sha256(
         json.dumps(body, sort_keys=True, separators=(",", ":")).encode()

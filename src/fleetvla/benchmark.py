@@ -221,28 +221,27 @@ class BenchmarkRun:
 
 @contextmanager
 def _captured_scheduler(
-    config: BenchmarkConfig,
+    specification: str,
+    scheduler_config: dict[str, Any],
 ) -> Iterator[tuple[Scheduler, str | None, str | None]]:
-    if ":" not in config.scheduler:
-        yield create_scheduler(config.scheduler, config.scheduler_config), None, None
+    if ":" not in specification:
+        yield create_scheduler(specification, scheduler_config), None, None
         return
 
-    filename, class_name = config.scheduler.rsplit(":", 1)
+    filename, class_name = specification.rsplit(":", 1)
     source_bytes = Path(filename).expanduser().resolve().read_bytes()
     source = source_bytes.decode("utf-8")
     source_sha256 = hashlib.sha256(source_bytes).hexdigest()
     with tempfile.TemporaryDirectory(prefix="fleetvla-benchmark-") as directory:
         captured_path = Path(directory) / "scheduler.py"
         captured_path.write_bytes(source_bytes)
-        scheduler = create_scheduler(
-            f"{captured_path}:{class_name}", config.scheduler_config
-        )
+        scheduler = create_scheduler(f"{captured_path}:{class_name}", scheduler_config)
         yield scheduler, source, source_sha256
 
 
 def run_benchmark(config: BenchmarkConfig) -> BenchmarkRun:
     source_sha256 = fleetvla_source_sha256()
-    with _captured_scheduler(config) as (
+    with _captured_scheduler(config.scheduler, config.scheduler_config) as (
         scheduler,
         scheduler_source,
         scheduler_source_sha256,

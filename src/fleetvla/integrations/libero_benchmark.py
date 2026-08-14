@@ -12,9 +12,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from ..benchmark import fleetvla_source_sha256
+from ..benchmark import _captured_scheduler, fleetvla_source_sha256
 from ..runtime import ACTION_EXECUTION_POLICIES
-from ..schedulers import create_scheduler
 from ..serving import AsyncServingEngine, serving_metrics
 from ..types import SessionConfig
 from .lerobot import LeRobotPolicyBackend
@@ -57,13 +56,9 @@ def run_smolvla_libero(
     if not math.isfinite(scheduler_timeout_s) or scheduler_timeout_s <= 0:
         raise ValueError("scheduler timeout must be finite and positive")
 
-    scheduler = create_scheduler(scheduler_name, scheduler_config)
-    scheduler_source = None
-    scheduler_source_sha256 = None
-    if ":" in scheduler_name:
-        scheduler_path = Path(scheduler_name.rsplit(":", 1)[0]).resolve()
-        scheduler_source = scheduler_path.read_text(encoding="utf-8")
-        scheduler_source_sha256 = hashlib.sha256(scheduler_source.encode()).hexdigest()
+    source_sha256 = fleetvla_source_sha256()
+    with _captured_scheduler(scheduler_name, scheduler_config) as captured:
+        scheduler, scheduler_source, scheduler_source_sha256 = captured
 
     try:
         import numpy as np
@@ -178,7 +173,7 @@ def run_smolvla_libero(
         "artifact_kind": "system",
         "provenance": {
             "fleetvla_version": importlib.metadata.version("fleetvla"),
-            "fleetvla_source_sha256": fleetvla_source_sha256(),
+            "fleetvla_source_sha256": source_sha256,
             "lerobot_version": importlib.metadata.version("lerobot"),
             "libero_version": importlib.metadata.version("hf-libero"),
             "python_version": platform.python_version(),
